@@ -65,5 +65,3 @@ Yksinkertainen text-to-speech -komento, joka muuntaa tekstiä suomenkieliseksi �
 - `/tts /markov`: muodostaa markov-ketjun ja muuntaa sen ääneksi. Voit myös antaa /markov -komennolle lisäargumentteja, eli esim `/tts /markov [käyttäjänimi]`.
 
 - `/tts` + vastaus viestiin: muuntaa viestin johon komennolla on vastattu ääneksi.
-
-Voit myös vaihtaa puhekielen komennolla `/settings tts defaultLanguage`
