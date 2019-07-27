@@ -1,0 +1,14 @@
+holidays
+pydub
+gtts
+uptime
+bs4
+telepot
+ujson
+pytz
+sqlite3
+ssl
+calendar
+logging
+mtranslate
+urllib
