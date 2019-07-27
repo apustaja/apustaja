@@ -28,8 +28,11 @@ Kun olet saanut botin luotua, nappaa sen API-avain ja käynnistä botti komennol
 
 - Voit kutsua säätä muissa kaupungeissa lisäämällä kaupungin nimen komennon perään, esimerkiksi `/saa Helsinki`. Oletuskaupungin voit vaihtaa komennolla `/settings saa defaultCity`.
 
+---
+
 **`/webcam`** hakee noin vartin välein päivittyvän tilannekuvan Aalto-yliopiston ylläpitämiltä, Väreelle päin suunnatuilta webkameroilta. Vaihtoehtoina joko `väre` tai `mt13`/`maarintie`, jolloin komento toimii esimerkiksi tyyliin `/webcam väre`. Otetut kuvat tallentuvat `/data/webcam` -kansioon, mutta kuvia ei säilytetä viimeisintä kuvaa enempää.
 
+---
 
 **`/markov`** muodostaa (osittain) satunnaisen viestin Markov-ketjuilla. Komennolle on muutamia eri käyttömuotoja, jotka on listattu alla.
 
