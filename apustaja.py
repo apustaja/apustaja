@@ -20,59 +20,108 @@ except ImportError:
 	import json
 
 ## to-do
-# - move users.json to db format
+# - remove useless chatDir existence checks (test first if they're ever used)
 # - move settings.json to db format
+# - add option for users to remove their data from the chainStore.db file
+# - add option for chats to clear all of their data
+# - make timer function faster (.db?)
 
 def exitHandler():
 	if debugLog is True:
-		logging.info('💤 Program closing!')
+		logging.info('😴 Program closing')
 
 
 def handle(msg):
 	try:
-		content_type, chat_type, chat_id = telepot.glance(msg, flavor="chat")
+		content_type, chat_type, chat = telepot.glance(msg, flavor="chat")
 	except KeyError:
 		if debugLog is True:
+			# why is this here?
 			logging.info(f'Failure in glance: {msg}')
 		return
 
-	chat = chat_id
-	user = str(msg['from']['id'])
 	chatDir = 'data/chats/' + str(chat)
-	
 	timestamp = time.time()
 	today = datetime.datetime.today()
 
+	# group upgraded to a supergroup; migrate data
 	if 'migrate_to_chat_id' in msg:
+		oldID = chat
+		newID = msg['migrate_to_chat_id']
+
 		if debugLog is True:
-			logging.info('migrate_to_chat_id found')
-			logging.info(msg)
+			logging.info(f'⚠️ Group {oldID} migrated to {newID}; starting data migration.')
 
-	if 'migrate_from_chat_id' in msg:
+		# do the migration simply by renaming the chat's directory
+		oldChatDir = 'data/chats/' + str(oldID)
+		newChatDir = 'data/chats/' + str(newID)
+		os.rename(oldChatDir, newChatDir)
+
+		# migrate chat stats to new chat
+		migrateStats(oldID, newID)
+
 		if debugLog is True:
-			logging.info('migrate_from_chat_id found')
-			logging.info(msg)
+			logging.info('✅ Chat data migration complete!')
 
-	if 'text' in msg:
-		commandSplit = msg['text'].strip().split(" ")
-	
-	# store message if it doesn't _start_ as a bot command. We don't care if it has a (probably unintended) command in it somewhere else
-	if content_type == 'text' and commandSplit[0][0] != '/':
-		if not os.path.isfile(chatDir + 'chainStore.db'):
-			createDatabase(msg)
+	# bot removed from chat; delete all chat data permanently
+	if 'left_chat_member' in msg and msg['left_chat_member']['id'] == botID:
+		# first remove all files in the folder
+		fileList = []
+		try:
+			for file in os.listdir(chatDir):
+				fileList.append(file)
+				os.remove(os.path.join(chatDir, file))
 
-		# update database
-		updateDatabase(int(user), parseMessage(msg), msg)
+			os.rmdir(chatDir)
 
-		# update stats database
-		updateStats(msg, 'message')
-	
-	# sees a valid command
-	elif content_type == 'text':
-		if not os.path.isdir(chatDir):
-			if debugLog is True:
-				logging.info('🌟 New chat detected!')
+		except FileNotFoundError:
+			pass
+
+		if debugLog is True:
+			logging.info(f'⚠️ Bot removed from chat {chat}; data purged.')
+
+	# detect if bot added to a new chat
+	if 'new_chat_members' in msg or 'group_chat_created' in msg:
+		if 'new_chat_member' in msg:
+			try:
+				if botID in msg['new_chat_member']['id']:
+					pass
+				else:
+					return
 			
+			except TypeError:
+				if msg['new_chat_member']['id'] == botID:
+					pass
+				else:
+					return
+		elif 'group_chat_created' in msg:
+			if msg['group_chat_created'] is True:
+				pass
+			else:
+				return
+
+		header = f'🤖 *Apustaja versio {versionumero}*\n'
+		mid = f'Hei, olen Apustaja! Alla on listattuna kasa komentoja joita voit käyttää. '
+		mid += 'Tarkempaa tietoa komennoista saat kokeilemalla niitä tai lukemalla tarkat ohjeet Githubista!\n\n'
+
+		cmdMarkov = f'*/markov:* Muodosta satunnaisgeneroituja viestejä (Botnet? Lue Github!)\n'
+		cmdUM = f'*/um:* Uhka vai mahdollisuus?\n'
+		cmdSaa = f'*/saa:* Kertoo tämänhetkisen sään. Oletuskaupungin voit asettaa komennolla `[/settings saa defaultCity]`\n'
+		cmdRoll = f'*/roll:* Heitä kolikkoa, gettaa tuplat tai pyöritä noppaa\n'
+		cmdReplace = f'*/s:* Korvaa jonkun muun viestissä tekstiä toisella tekstillä\n'
+		cmdTts = f'*/tts:* Muuta tekstiä ääneksi esimerkiksi vastaamalla viestiin tai ajamalla `[/tts /markov]`\n'
+		cmdSett = f'*/settings:* Muuta Apustajan ryhmäkohtaisia asetuksia `[admineille]`\n'
+		cmdInfo = f'*/info:* Tilastoja, faktoja ja analyysejä.\n\n'
+		gitInfo = f'🤙 *Hostaa itse, forkkaa tai ihmettele spagettikoodia!*\nhttps://github.com/apustaja/apustaja'
+
+		replymsg = header+mid+cmdMarkov+cmdUM+cmdSaa+cmdRoll+cmdReplace+cmdTts+cmdSett+cmdInfo+gitInfo
+		bot.sendMessage(chat, replymsg, parse_mode='Markdown')
+
+		if debugLog is True:
+			logging.info('🌟 Bot added to a new chat!')
+
+		# create the folders for the chat
+		if not os.path.isdir(chatDir):
 			if not os.path.isdir('data/chats'):
 				if not os.path.isdir('data'):
 					os.mkdir('data')
@@ -80,20 +129,23 @@ def handle(msg):
 				os.mkdir('data/chats')
 
 			os.mkdir(chatDir)
+	
+	if 'text' in msg:
+		commandSplit = msg['text'].strip().split(" ")
 
-			# check if sender has a username
-			if 'username' in msg['from']:
-				username = msg['from']['username']
-			else:
-				username = msg['from']['first_name']
+	# store message if it doesn't _start_ as a bot command. We don't care if it has a (probably unintended) command in it somewhere else
+	if content_type == 'text' and commandSplit[0][0] != '/':
+		if not os.path.isfile(chatDir + 'chainStore.db'):
+			createDatabase(msg)
 
-			# init users.json with the sender
-			users = {}
-			users[user] = username
+		# update database
+		updateDatabase(parseMessage(msg), msg)
 
-			with io.open(chatDir + '/users.json', 'w', encoding='utf8') as jsonData:
-				json.dump(users, jsonData, indent=4, sort_keys=True)
-
+		# update stats database
+		updateStats(msg, 'message')
+	
+	# sees a valid command
+	elif content_type == 'text':
 		if commandSplit[0].lower() in validCommands or commandSplit[0] in validCommandsAlt:
 			# command we saw
 			command = commandSplit[0].lower()
@@ -247,7 +299,7 @@ def handle(msg):
 				cmdTts = f'*/tts:* Muuta tekstiä ääneksi esimerkiksi vastaamalla viestiin tai ajamalla `[/tts /markov]`\n'
 				cmdSett = f'*/settings:* Muuta Apustajan ryhmäkohtaisia asetuksia `[admineille]`\n'
 				cmdInfo = f'*/info:* Tilastoja, faktoja ja analyysejä.\n'
-				gitInfo = f'\n🤙 *Hostaa itse, forkkaa tai ihmettele spagettikoodia!*\nhttps://github.com/499602D2/tg-apustaja'
+				gitInfo = f'\n🤙 *Hostaa itse, forkkaa tai ihmettele spagettikoodia!*\nhttps://github.com/apustaja/apustaja'
 
 				replymsg = header+mid+cmdMarkov+cmdUM+cmdSaa+cmdRoll+cmdReplace+cmdTts+cmdSett+cmdInfo+gitInfo
 				bot.sendMessage(chat, replymsg, parse_mode='Markdown')
@@ -258,31 +310,48 @@ def handle(msg):
 			return
 
 
-def updateStats(msg, type):
-	content_type, chat_type, chat = telepot.glance(msg, flavor='chat')
-	user = msg['from']['id']
-
+def migrateStats(oldID, newID):
+	# open db connection
 	statsConn = sqlite3.connect('data/stats.db')
 	statsCursor = statsConn.cursor()
 
 	try: # check if stats db exists
-		statsCursor.execute("CREATE TABLE stats (chatID INTEGER, userID INTEGER, msgCount INTEGER, cmdCount INTEGER, PRIMARY KEY (chatID, userID))")
-		statsCursor.execute("CREATE INDEX chatUser ON stats (chatID, userID)")
+		statsCursor.execute("CREATE TABLE stats (chatID INTEGER, msgCount INTEGER, cmdCount INTEGER)")
+	except sqlite3.OperationalError:
+		pass # database exists, pass	
+
+	try: # if there are any old stats, simply insert a new chatID into the db, replacing the old one
+		statsCursor.execute("UPDATE stats SET chatID = ? WHERE chatID = ?", (newID, oldID))	
+	except: # if no stats for chat (should never happen, but let's handle it anyway), create some with the new ID
+		statsCursor.execute("INSERT INTO stats (chatID, msgCount, cmdCount) VALUES (?, ?, ?)", (newID, 0, 0))
+
+	return
+
+
+def updateStats(msg, type):
+	content_type, chat_type, chat = telepot.glance(msg, flavor='chat')
+	
+	# open db connection
+	statsConn = sqlite3.connect('data/stats.db')
+	statsCursor = statsConn.cursor()
+
+	try: # check if stats db exists
+		statsCursor.execute("CREATE TABLE stats (chatID INTEGER, msgCount INTEGER, cmdCount INTEGER, PRIMARY KEY (chatID))")
 	except sqlite3.OperationalError:
 		pass
 
 	if type == 'message':
 		try:
-			statsCursor.execute("INSERT INTO stats (chatID, userID, msgCount, cmdCount) VALUES (?, ?, ?, ?)", (chat, user, 1, 0))
+			statsCursor.execute("INSERT INTO stats (chatID, msgCount, cmdCount) VALUES (?, ?, ?)", (chat, 1, 0))
 		except:
-			statsCursor.execute("UPDATE stats SET msgCount = msgCount + 1 WHERE chatID = ? AND userID = ?", (chat, user))
+			statsCursor.execute("UPDATE stats SET msgCount = msgCount + 1 WHERE chatID = ?", (chat,))
 
 
 	elif type == 'command':
 		try:
-			statsCursor.execute("INSERT INTO stats (chatID, userID, msgCount, cmdCount) VALUES (?, ?, ?, ?)", (chat, user, 0, 1))
+			statsCursor.execute("INSERT INTO stats (chatID, msgCount, cmdCount) VALUES (?, ?, ?)", (chat, 0, 1))
 		except:
-			statsCursor.execute("UPDATE stats SET cmdCount = cmdCount + 1 WHERE chatID = ? AND userID = ?", (chat, user))
+			statsCursor.execute("UPDATE stats SET cmdCount = cmdCount + 1 WHERE chatID = ?", (chat,))
 
 	statsConn.commit()
 	statsConn.close()
@@ -290,8 +359,7 @@ def updateStats(msg, type):
 
 
 def settings(msg):
-	content_type, chat_type, chat_id = telepot.glance(msg, flavor="chat")
-	chat = chat_id
+	content_type, chat_type, chat = telepot.glance(msg, flavor="chat")
 
 	# check if caller is an admin
 	sender = bot.getChatMember(chat, msg['from']['id'])
@@ -304,7 +372,7 @@ def settings(msg):
 		return
 
 	# /settings [arg1] [arg2] [arg3]
-	validArg1 = ['timer', 'status', 'saa', 'tts', 'mute', 'ban']
+	validArg1 = ['timer', 'status', 'saa', 'tts']
 
 	# start off by generating setting file for chat, if it doesn't exist already
 	if not os.path.isfile("data/chats/" + str(chat) + "/settings.json"):
@@ -516,8 +584,7 @@ def timerHandle(msg,command):
 		command = command.split('@')
 		command = command[0]
 
-	content_type, chat_type, chat_id = telepot.glance(msg, flavor="chat")
-	chat = chat_id
+	content_type, chat_type, chat = telepot.glance(msg, flavor="chat")
 
 	# get current time
 	now_called = datetime.datetime.today() # now
@@ -592,60 +659,23 @@ def timerHandle(msg,command):
 
 
 def createDatabase(msg):
-	content_type, chat_type, chat_id = telepot.glance(msg, flavor='chat')
-	chat = chat_id
-	user = str(msg['from']['id'])
+	content_type, chat_type, chat = telepot.glance(msg, flavor='chat')
 	chatDir = 'data/chats/' + str(chat)
 
-	# check if sender has a username
-	if 'username' in msg['from']:
-		username = msg['from']['username']
-	else:
-		username = msg['from']['first_name']
-
-	# chat and user directories
-	chatDir = 'data/chats/' + str(chat)
-
-	# check if users.json exists; if not, it's a new chat.
-	if not os.path.isfile(chatDir + '/users.json'):
-		# create folder for chat and user
+	# create folder for chat
+	if not os.path.isdir(chatDir):
 		os.mkdir(chatDir)
-
-		# init users.json with the sender
-		users = {}
-		users[user] = username
-
-		with io.open(chatDir + '/users.json', 'w', encoding='utf8') as jsonData:
-			json.dump(users, jsonData, indent=4, sort_keys=True)
 
 		if debugLog is True:
 			logging.info('🌟 New chat detected!')
-
-	# file exists, check for missing users etc.
-	else:
-		with io.open(chatDir + '/users.json', 'r', encoding='utf8') as jsonData:
-			users = json.load(jsonData)
-
-		# new user; add entry, create folder and chainStore
-		if user not in users:
-			users[user] = username
-
-			with io.open(chatDir + '/users.json', 'w', encoding='utf8') as jsonData:
-				json.dump(users, jsonData, indent=4, sort_keys=True)
-
-		elif username != users[user]:	# old user, new username; update
-			users[user] = username
-
-			with io.open(chatDir + '/users.json', 'w', encoding='utf8') as jsonData:
-				json.dump(users, jsonData, indent=4, sort_keys=True)
 
 	# Establish connection
 	conn = sqlite3.connect(chatDir + '/' + 'chainStore.db')
 	c = conn.cursor()
 
 	try:
-		c.execute("CREATE TABLE pairs (word1baseform TEXT, word1 TEXT, userID INTEGER, word2 TEXT, count INTEGER, PRIMARY KEY (word1, userID, word2))")
-		c.execute("CREATE INDEX baseform ON pairs (word1baseform, userID)")
+		c.execute("CREATE TABLE pairs (word1baseform TEXT, word1 TEXT, word2 TEXT, count INTEGER, PRIMARY KEY (word1, word2))")
+		c.execute("CREATE INDEX baseform ON pairs (word1baseform, word2)")
 	except sqlite3.OperationalError:
 		pass
 
@@ -655,7 +685,7 @@ def createDatabase(msg):
 
 
 def parseMessage(msg):
-	# slice our message into individual words
+	# slice our message into individual words and remove unix escape char fuckery
 	sentence = msg['text'].strip()
 	sentence = re.sub(r'(\\u[0-9A-Fa-f]{1,4})', unescapematch, sentence)
 	sentence = sentence.replace('\r\n', ' ').replace('\n', ' ').replace('  ', ' ').split(" ")
@@ -721,10 +751,19 @@ def parseMessage(msg):
 	return chainStore
 
 
-def updateDatabase(user, chainStore, msg): 
-	content_type, chat_type, chat_id = telepot.glance(msg, flavor='chat')
-	chat = chat_id
+def updateDatabase(chainStore, msg): 
+	content_type, chat_type, chat = telepot.glance(msg, flavor='chat')
 	chatDir = 'data/chats/' + str(chat)
+
+	# create the folders for the chat if they don't exist
+	if not os.path.isdir(chatDir):
+		if not os.path.isdir('data/chats'):
+			if not os.path.isdir('data'):
+				os.mkdir('data')
+
+			os.mkdir('data/chats')
+
+		os.mkdir(chatDir)
 
 	# Establish connection
 	conn = sqlite3.connect(chatDir + '/' + 'chainStore.db')
@@ -736,10 +775,9 @@ def updateDatabase(user, chainStore, msg):
 			oldCount = chainStore[word1][word2]
 
 			try:
-				# word1baseform TEXT, word1 TEXT, userID INTEGER, word2 TEXT, count INTEGER, PRIMARY KEY (word1, userID, word2))")
-				c.execute("INSERT INTO pairs (word1baseform, word1, userID, word2, count) VALUES (?, ?, ?, ?, 1)", (word1baseform, word1, user, word2))
+				c.execute("INSERT INTO pairs (word1baseform, word1, word2, count) VALUES (?, ?, ?, 1)", (word1baseform, word1, word2))
 			except:
-				c.execute("UPDATE pairs SET count = count + ? WHERE word1baseform = ? AND word1 = ? AND userID = ? AND word2 = ?", (oldCount, word1baseform, word1, user, word2))
+				c.execute("UPDATE pairs SET count = count + ? WHERE word1baseform = ? AND word1 = ? AND word2 = ?", (oldCount, word1baseform, word1, word2))
 
 	conn.commit()
 	conn.close()
@@ -747,8 +785,7 @@ def updateDatabase(user, chainStore, msg):
 
 
 def tts(msg,kind):
-	content_type, chat_type, chat_id = telepot.glance(msg, flavor="chat")
-	chat = chat_id
+	content_type, chat_type, chat = telepot.glance(msg, flavor="chat")
 	chatDir = 'data/chats/' + str(chat)
 
 	if kind == 'text':
@@ -806,36 +843,10 @@ def tts(msg,kind):
 
 
 def markov(msg, commandSplit, chat):
-	user = str(msg['from']['id'])
 	chatDir = 'data/chats/' + str(chat)
 
-	# check for a user mention
-	try:
-		kind = 'chat'
-		if 'mention' in msg['entities'][1]['type']:
-			kind = 'user'
-			# slice command -> get username -> remove @
-			usernamemention = commandSplit[1].replace('@','')
-
-			# find user ID for mentioned user; open and read users.json
-			with open(chatDir + '/users.json') as jsonData:
-				userMap = json.load(jsonData)
-
-			for user in userMap: # go through every user's data in chat
-				username = userMap[user]
-				if str(username) == str(usernamemention): # match?
-					usermention = user # this user was mentioned
-
-		elif 'text_mention' in msg['entities'][0]['type']:
-			usermention = msg['entities'][0]['type']['text_mention']['user']['id']
-			kind = 'user'
-
-	except IndexError:
-		kind = 'chat'
-		pass
-
 	# check if we were given a seed
-	if kind is 'chat' and len(commandSplit) is 1 or kind is 'user' and len(commandSplit) is 2: # if there's ONLY the command, just randomly pick a word
+	if len(commandSplit) is 1: # if there's ONLY the command, just randomly pick a word
 		if 'reply_to_message' not in msg:
 			seedInput = False
 
@@ -863,17 +874,12 @@ def markov(msg, commandSplit, chat):
 					if i is not len(msgSplit) - 2:
 						genmsg += ' '
 	
-	elif kind is 'chat' and len(commandSplit) > 1 or kind is 'user' and len(commandSplit) > 2:
+	else:
 		seedInput = True
 		genmsg = ''
 		n = 0
 
-		# If we have a user mention, skim over it by shifting the start index
-		if kind is 'user':
-			startIndex = 2
-		else:
-			startIndex = 1
-
+		startIndex = 1
 		for n in range(startIndex, len(commandSplit) - 1):
 			genmsg += commandSplit[n]
 
@@ -888,45 +894,22 @@ def markov(msg, commandSplit, chat):
 
 		seed = commandSplit[-1]
 
-	if kind is 'user':
-		try:
-			user = usermention
-		except UnboundLocalError:
-			bot.sendMessage(chat, "*Error: käyttäjästä ei ole dataa.* Pyydä häntä sanomaan hei!", parse_mode="Markdown")
-			return
-
-	else:
-		user = False
 
 	if seedInput is False:
 		seed = False
 
-	# user_id now stored in usermention; generate message if someone was mentioned
-	try:
-		if 'mention' in msg['entities'][1]['type'] or 'text_mention' in msg['entities'][1]['type']:
-			try:
-				replymsg = chainGeneration(chat, user, seed)
-				if seedInput is not False:
-					replymsg = genmsg + ' ' + replymsg
+	replymsg = chainGeneration(chat, seed)
 
-				bot.sendMessage(chat, replymsg)
-			
-			except UnboundLocalError:
-				bot.sendMessage(chat, 'Ei dataa käyttäjästä - pyydä häntä sanomaan hei!')
+	if seedInput is not False:
+		replymsg = genmsg + ' ' + replymsg
 	
-	except IndexError:
-		replymsg = chainGeneration(chat, user, seed)
-
-		if seedInput is not False:
-			replymsg = genmsg + ' ' + replymsg
-		
-		if replymsg is not None and len(replymsg) is not 0:
-			bot.sendMessage(chat, replymsg)
+	if replymsg is not None and len(replymsg) is not 0:
+		bot.sendMessage(chat, replymsg)
 
 	return
 
 
-def chainGeneration(chat, user, seed):
+def chainGeneration(chat, seed):
 	# chat directory
 	chatDir = 'data/chats/' + str(chat)
 
@@ -942,14 +925,11 @@ def chainGeneration(chat, user, seed):
 	if seed is not False: # if we are given a seed, check if it exists in the db.
 		try:
 			word1baseform = seed.replace(',','').replace('.','').replace('?','').replace('!','').replace('(','').replace(')','').replace('[','').replace(']','').lower()
-			if user is not False:
-				c.execute("SELECT word2, count FROM pairs WHERE word1baseform = ? AND word1 = ? AND userID = ?", (word1baseform, seed, user))
-			else:
-				c.execute("SELECT word2, count FROM pairs WHERE word1baseform = ? AND word1 = ?", (word1baseform, seed))
+			c.execute("SELECT word2, count FROM pairs WHERE word1baseform = ? AND word1 = ?", (word1baseform, seed))
 		
 		except Exception as e:
-			print(f'Exception in genmsg: {e}')
-			print(f'user: {user}, seed: {seed}')
+			if debugLog is True:
+				logging.info(f'Exception in genmsg: {e}')
 			return
 
 		# check length of our query return; if 0, try all forms of the word. If not, continue into the regular loop.
@@ -957,11 +937,7 @@ def chainGeneration(chat, user, seed):
 		if len(queryReturn) is 0:
 			# find all word1's with the same baseform
 			baseform = seed.replace(',','').replace('.','').replace('?','').replace('!','').replace('(','').replace(')','').replace('[','').replace(']','').lower()
-
-			if user is not False:
-				c.execute("SELECT word1, word2, count FROM pairs WHERE word1baseform = ? AND userID = ?", (baseform, user))
-			else:
-				c.execute("SELECT word1, word2, count FROM pairs WHERE word1baseform = ?", (baseform,))
+			c.execute("SELECT word1, word2, count FROM pairs WHERE word1baseform = ?", (baseform,))
 
 			queryReturn = c.fetchall()
 
@@ -1014,7 +990,7 @@ def chainGeneration(chat, user, seed):
 				seedGenSuccess = True
 
 				# return if we get a '', which implies the end of a sentence
-				if nextWord == '':
+				if nextWord == '' and nextWord[-1] != ',':
 					return genmsg
 
 				try:
@@ -1062,14 +1038,6 @@ def chainGeneration(chat, user, seed):
 						break
 					i += 1
 
-				# markov error logging
-				if probSum <= 0.99999999999999:
-					logStr = f'Markov debug log:\n'
-					logStr2 = f'paths: {paths}\n\n'
-					logStr3 = f'i = {i}, probSum: {probSum}, probFloat: {probFloat}, maxSum: {maxSum}\n\n'
-					logStr4 = f'queryReturn: {queryReturn}\n\n'
-					logStr5 = f''
-
 				if len(nextWord) is not 0:
 					if nextWord[0] == '>':
 						separator = '\n'
@@ -1082,7 +1050,7 @@ def chainGeneration(chat, user, seed):
 				baseWord = nextWord
 
 				# return if we get a '', which implies the end of a sentence
-				if nextWord == '':
+				if nextWord == '' and nextWord[-1] != ',':
 					return genmsg
 
 				try:
@@ -1102,21 +1070,12 @@ def chainGeneration(chat, user, seed):
 	# pick a random word as baseWord; if seedGenSuccess is True, we already have a baseWord.
 	if seedGenSuccess is False and seed is not False:
 		# pull a list from db -> choose random element -> baseWord
-		if user is not False:
-			c.execute("SELECT COUNT(*) AS cnt FROM pairs WHERE userID = ?", (user,))
-			cnt = c.fetchall()[0][0]
-			rndIndex = random.randint(0, cnt-1)
-			
-			c.execute("SELECT word1 FROM pairs WHERE userID = ? LIMIT ?, 1", (user,rndIndex))
-			baseWord = c.fetchall()[0][0]
-
-		else:
-			c.execute("SELECT COUNT(*) AS cnt FROM pairs")
-			cnt = c.fetchall()[0][0]
-			rndIndex = random.randint(0, cnt-1)
-			
-			c.execute("SELECT word1 FROM pairs LIMIT ?, 1", (rndIndex,))
-			baseWord = c.fetchall()[0][0]
+		c.execute("SELECT COUNT(*) AS cnt FROM pairs")
+		cnt = c.fetchall()[0][0]
+		rndIndex = random.randint(0, cnt-1)
+		
+		c.execute("SELECT word1 FROM pairs LIMIT ?, 1", (rndIndex,))
+		baseWord = c.fetchall()[0][0]
 
 		if len(baseWord) is not 0:
 			if baseWord[0] == '>':
@@ -1133,31 +1092,15 @@ def chainGeneration(chat, user, seed):
 		randomGenSuccess = False
 		failCount = 0
 		while randomGenSuccess is False:
-			if user is not False:
-				try:
-					c.execute("SELECT COUNT(*) AS cnt FROM pairs WHERE userID = ?", (user,))
-				except sqlite3.OperationalError:
-					bot.sendMessage(chat, 'Error: ryhmästä ei ole dataa. Kokeile lähettää tavallinen viesti ensin!')
-					return
+			try:
+				c.execute("SELECT COUNT(*) AS cnt FROM pairs")
+			except sqlite3.OperationalError:
+				bot.sendMessage(chat, 'Error: ryhmästä ei ole dataa. Kokeile lähettää tavallinen viesti ensin!')
+				return
 
-				cnt = c.fetchall()[0][0]
-				if cnt is 0:
-					bot.sendMessage(chat, "*Error: käyttäjästä ei ole dataa.* Pyydä häntä sanomaan hei!", parse_mode="Markdown")
-					return
-
-				rndIndex = random.randint(0,cnt-1)
-				c.execute("SELECT word1 FROM pairs WHERE userID = ? LIMIT ?, 1", (user, rndIndex))
-
-			else:
-				try:
-					c.execute("SELECT COUNT(*) AS cnt FROM pairs")
-				except sqlite3.OperationalError:
-					bot.sendMessage(chat, 'Error: ryhmästä ei ole dataa. Kokeile lähettää tavallinen viesti ensin!')
-					return
-
-				cnt = c.fetchall()[0][0]
-				rndIndex = random.randint(0,cnt-1)
-				c.execute("SELECT word1 FROM pairs LIMIT ?, 1", (rndIndex,))
+			cnt = c.fetchall()[0][0]
+			rndIndex = random.randint(0,cnt-1)
+			c.execute("SELECT word1 FROM pairs LIMIT ?, 1", (rndIndex,))
 
 			# now we have a baseword
 			baseWord = c.fetchall()[0][0]
@@ -1167,18 +1110,11 @@ def chainGeneration(chat, user, seed):
 			baseform = baseWord.replace(',','').replace('.','').replace('?','').replace('!','').replace('(','').replace(')','').replace('[','').replace(']','').lower()
 
 			# check if we have a way of continuing with the chosen baseWord; get all word2's with the same word1
-			if user is not False:
-				c.execute("SELECT word2, count FROM pairs WHERE word1baseform = ? AND word1 = ? AND userID = ?", (baseform, baseWord, user))
-			else:
-				c.execute("SELECT word2, count FROM pairs WHERE word1baseform = ? AND word1 = ?", (baseform, baseWord))
+			c.execute("SELECT word2, count FROM pairs WHERE word1baseform = ? AND word1 = ?", (baseform, baseWord))
 
 			queryReturn = c.fetchall()
 			if len(queryReturn) is 0:
-				if user is not False:
-					c.execute("SELECT word1, word2, count FROM pairs WHERE word1baseform = ? AND userID = ?", (baseform, user))
-				else:
-					c.execute("SELECT word1, word2, count FROM pairs WHERE word1baseform = ?", (baseform,))
-
+				c.execute("SELECT word1, word2, count FROM pairs WHERE word1baseform = ?", (baseform,))
 				queryReturn = c.fetchall()
 
 				# Still nothing.
@@ -1225,11 +1161,7 @@ def chainGeneration(chat, user, seed):
 	while genmsgLen < maxLength:
 		genmsgLen = len(genmsg.split(' '))
 		baseform = baseWord.replace(',','').replace('.','').replace('?','').replace('!','').replace('(','').replace(')','').replace('[','').replace(']','').lower()
-
-		if user is not False:
-			c.execute("SELECT word2, count FROM pairs WHERE word1baseform = ? AND word1 = ? AND userID = ?", (baseform, baseWord, user))
-		else:
-			c.execute("SELECT word2, count FROM pairs WHERE word1baseform = ? AND word1 = ?", (baseform, baseWord))
+		c.execute("SELECT word2, count FROM pairs WHERE word1baseform = ? AND word1 = ?", (baseform, baseWord))
 
 		queryReturn = c.fetchall()
 
@@ -1238,10 +1170,7 @@ def chainGeneration(chat, user, seed):
 			# find all word1's with the same baseform
 			baseform = baseWord.replace(',','').replace('.','').replace('?','').replace('!','').replace('(','').replace(')','').replace('[','').replace(']','').lower()
 
-			if user is not False:
-				c.execute("SELECT word1, word2, count FROM pairs WHERE word1baseform = ? AND userID = ?", (baseform, user))
-			else:
-				c.execute("SELECT word1, word2, count FROM pairs WHERE word1baseform = ?", (baseform,))
+			c.execute("SELECT word1, word2, count FROM pairs WHERE word1baseform = ?", (baseform,))
 
 			queryReturn = c.fetchall()
 
@@ -1345,6 +1274,10 @@ def chainGeneration(chat, user, seed):
 			genmsg = genmsg + separator + nextWord
 			baseWord = nextWord
 
+			if len(baseWord) > 0:
+				if baseWord[-1] == ',':
+					maxLength += 1
+
 			# return if we get a '', which implies the end of a sentence
 			if nextWord == '':
 				return genmsg
@@ -1364,8 +1297,7 @@ def chainGeneration(chat, user, seed):
 
 
 def roll(msg):
-	content_type, chat_type, chat_id = telepot.glance(msg, flavor="chat")
-	chat = chat_id
+	content_type, chat_type, chat = telepot.glance(msg, flavor="chat")
 	commandSplit = msg['text'].strip().split(" ")
 
 	try:
@@ -1441,7 +1373,7 @@ def um():
 	'En kyl tiiä, sanoisin', 'Ilta-Sanomien horoskooppi sanoo', 'Kasipalloni piippaa:', 'Gaussin jakaumasta näemme tämän olevan',
 	'Ratkaisun todistaminen jätetään lukijalle harjoitukseksi *', 'On ilmiselvää että kyseessä on',
 	'Selvästi nähdään että vastaus on', 'Aiemmasta päätelmästä voidaan johtaa että tulos on',
-	'Lottokone pyörii... Pallossa lukee', 'Tilastojen, faktojen ja analyysien jälkeen kyseessä on selkeä',
+	'Lottokone pyörii... Palloissa lukee', 'Tilastojen, faktojen ja analyysien jälkeen kyseessä on selkeä',
 	'Viinapulloni pohjalta löydän totuuden:', 'Kuten isoäitini tapasi sanoa,', 'Olosuhteet huomioiden',
 	'Keskusteluhistoriallesi myötisteltyäni sanoisin tämän olevan selvä', 'JA SIELTÄ! Kiistaton',
 	'Kuten Matti Nykänen tapasi sanoa, jokainen tsäänssi on', 'Marakassejani ravisteltuani sanoisin',
@@ -1451,7 +1383,8 @@ def um():
 	'Vierasvallan tietoverkossa suorittamani laskenta antaa odotusarvoksi', '[MESSAGE INTERCEPTED BY NSA PRISM CHECKPOINT] ORIGINAL PAYLOAD CONTENT:',
 	'Heitän imaginääristä kolikkoa:', 'Nuuh nuuh... Haistan tämän olevan', 'Pikkulintuni lauloivat tämän olevan', 'Tinder-matchini sanoo',
 	'Pimpelipom *tähtisadetta* *ilmatöötit laulavat* *Jeesus tulee toistamiseen*:', '[Ylidramatisointi satunnaisgeneroidusta vastauksesta]:',
-	'Entten tentten teelikamentten, hissun kissun vaapula vissun, eelin keelin klot, viipula vaapula vot, Eskon saun piun paun. Nyt sää lähdet tästä pelistä pois, puh pah pelistä pois! Jäljelle jäi']
+	'Entten tentten teelikamentten, hissun kissun vaapula vissun, eelin keelin klot, viipula vaapula vot, Eskon saun piun paun. Nyt sää lähdet tästä pelistä pois, puh pah pelistä pois! Jäljelle jäi',
+	'Kiinnostuskiikareissani näkyy']
 
 	if randInt is 0:
 		random.shuffle(responses)
@@ -1608,8 +1541,7 @@ def saa(msg, runCount):
 		queryType = 'search'
 
 	else:
-		content_type, chat_type, chat_id = telepot.glance(msg, flavor="chat")
-		chat = chat_id
+		content_type, chat_type, chat = telepot.glance(msg, flavor="chat")
 
 		# load default city
 		with open("data/chats/" + str(chat) +  "/settings.json") as jsonData:
@@ -2204,8 +2136,7 @@ def saa(msg, runCount):
 
 
 def webcam(msg):
-	content_type, chat_type, chat_id = telepot.glance(msg, flavor="chat")
-	chat = chat_id
+	content_type, chat_type, chat = telepot.glance(msg, flavor="chat")
 	commandSplit = msg['text'].strip().split(" ")
 
 	try:
@@ -2216,9 +2147,6 @@ def webcam(msg):
 		replyMsg = '*📷 Käyttö: /webcam [kameran nimi]*\nKamerat: Väre (väre), Maarintie 13 (mt13)\n'
 		replyMsg = replyMsg + '_Kameroita ylläpitää Aalto-yliopisto – kuvat päivittyvät vartin välein._'
 		bot.sendMessage(chat_id=chat, text=replyMsg, parse_mode="Markdown")
-
-		#keyboard = ReplyKeyboardMarkup(keyboard=[['/webcam väre', '/webcam maarintie']], one_time_keyboard=True, selective=True)
-		#bot.sendMessage(chat_id, '📷 Valitse webkamera – kamerat päivittyvät noin 15 minuutin välein.', reply_markup=keyboard, reply_to_message_id=msg['message_id'])
 
 		return
 
@@ -2500,7 +2428,6 @@ def alko():
 def info(msg):
 	content_type, chat_type, chat = telepot.glance(msg, flavor='chat')
 	chatDir = 'data/chats/' + str(chat)
-	user = msg['from']['id']
 
 	# read stats db
 	statsConn = sqlite3.connect('data/stats.db')
@@ -2559,10 +2486,18 @@ def info(msg):
 	else:
 		upmins = str(upmins)
 
+	# get chainStore.db file size
+	try:
+		chainStorePath = chatDir + '/chainStore.db'
+		dbSize = float(os.path.getsize(chainStorePath) / 1000000)
+	except:
+		dbSize = 0.00
+
 	infomsg1 = "Apustaja versio {:s}\n".format(versionumero)
 	localStatsHeader = '*Ryhmän tilastot*\n'
 	localStats1 = 'Viestejä käsitelty: {:d}\n'.format(messages)
-	localStats2 = 'Komentoja käsitelty: {:d}\n\n'.format(commands)
+	localStats2 = 'Komentoja käsitelty: {:d}\n'.format(commands)
+	localdbsize = 'Markov-mallin koko: {:.2f} MB\n\n'.format(dbSize)
 
 	globalStatsHeader = '*Yleiset tilastot*\n'
 	globalStats1 = 'Viestejä käsitelty: {:d}\n'.format(globalMessages)
@@ -2584,26 +2519,35 @@ def info(msg):
 
 	upstr = '\n*Palvelimen tiedot*\n'
 
-	return localStatsHeader + localStats1 + localStats2 + globalStatsHeader + globalStats1 + globalStats2 + upstr + infomsg1 + infomsg4
+	return localStatsHeader + localStats1 + localStats2 + localdbsize + globalStatsHeader + globalStats1 + globalStats2 + upstr + infomsg1 + infomsg4
 
 
 def firstRun():
+	print('Vaikuttaa siltä että ajat Apustajaa ensimmäistä kertaa')
+	print('Aloitetaan luomalla tarvittavat kansiot.')
+	time.sleep(2)
+	
 	# create /data and /chats
 	if not os.path.isdir('data'):
 		os.mkdir('data')
 		os.mkdir('data/chats')
 		print("Kansiot luotu!\n")
-		time.sleep(1)
+
+	elif not os.path.isdir('data/chats'):
+		os.mkdir('data/chats')
+		print("Kansiot luotu!\n")
+
+	time.sleep(1)
 
 	print('Apustaja tarvitsee toimiakseen ns. bot tokenin;')
 	print('ohjeet tämän hankkimiseen löydät Githubista.')
 
-	# create global settings.json
-	if not os.path.isfile('data' + '/globalSettings.json'):
+	# create a settings file for the bot; we'll store the API keys here
+	if not os.path.isfile('data' + '/botSettings.json'):
 		if not os.path.isdir('data'):
 			os.mkdir('data')
 
-		with open('data/globalSettings.json', 'w') as jsonData:
+		with open('data/botSettings.json', 'w') as jsonData:
 			settingMap = {} # empty .json file
 			settingMap['initVersion'] = versionumero
 
@@ -2629,11 +2573,11 @@ def updateToken(updateTokens):
 	if not os.path.isdir('data'):
 		firstRun()
 
-	if not os.path.isfile('data' + '/globalSettings.json'):
-		with open('data/globalSettings.json', 'w') as jsonData:
+	if not os.path.isfile('data' + '/botSettings.json'):
+		with open('data/botSettings.json', 'w') as jsonData:
 			settingMap = {} # empty .json file
 	else:
-		with open('data' + '/globalSettings.json', 'r') as jsonData:
+		with open('data' + '/botSettings.json', 'r') as jsonData:
 				settingMap = json.load(jsonData) # use old .json
 
 	if 'botToken' in updateTokens:
@@ -2649,7 +2593,7 @@ def updateToken(updateTokens):
 		tokenInput = str(input('Syötä OpenWeatherMap -palvelun API-avaimesi: '))
 		settingMap['owmKey'] = tokenInput
 
-	with open('data' + '/globalSettings.json', 'w') as jsonData:
+	with open('data' + '/botSettings.json', 'w') as jsonData:
 		json.dump(settingMap, jsonData, indent=4, sort_keys=True)
 
 	time.sleep(2)
@@ -2657,11 +2601,12 @@ def updateToken(updateTokens):
 
 
 def main():
-	global TOKEN, WEATHERKEY, bot, versionumero
+	# some global vars for use in other functions
+	global TOKEN, WEATHERKEY, bot, versionumero, botID
 	global debugLog, debugMode
 
 	# current version
-	versionumero = '1.4.3'
+	versionumero = '1.4.5'
 
 	# default
 	start = False
@@ -2705,9 +2650,12 @@ def main():
 			if arg in debugArgs:
 				if arg == 'log' or arg == '-log':
 					debugLog = True
+					if not os.path.isdir('data'):
+						firstRun()
+					
 					log = 'data/log.log'
 
-					# disable logging for urllib and requests because jesus fuck that's a lot of spam
+					# disable logging for urllib and requests because jesus fuck they make a lot of spam
 					logging.getLogger("requests").setLevel(logging.WARNING)
 					logging.getLogger("urllib3").setLevel(logging.WARNING)
 					logging.getLogger("gtts").setLevel(logging.WARNING)
@@ -2729,21 +2677,22 @@ def main():
 
 	# if data folder isn't found, we haven't run before (or someone pressed the wrong button)
 	if not os.path.isdir('data'):
-		print('Vaikuttaa siltä että ajat Apustajaa ensimmäistä kertaa')
-		print('Aloitetaan luomalla tarvittavat kansiot.')
-		time.sleep(2)
 		firstRun()
 
 	try:
-		with open('data' + '/globalSettings.json', 'r') as jsonData:
+		with open('data' + '/botSettings.json', 'r') as jsonData:
 			settingMap = json.load(jsonData)
 
 	except FileNotFoundError:
 		firstRun()
 
+		with open('data' + '/botSettings.json', 'r') as jsonData:
+			settingMap = json.load(jsonData)
+
 	# token for the Telegram API; get from args or as a text file
 	if len(settingMap['botToken']) is 0 or ':' not in settingMap['botToken']:
 		firstRun()
+	
 	else:
 		TOKEN = settingMap['botToken']
 		WEATHERKEY = settingMap['owmKey']
@@ -2754,7 +2703,7 @@ def main():
 	# handle ssl exceptions
 	ssl._create_default_https_context = ssl._create_unverified_context
 
-	# get bot's current username
+	# get the bot's specifications
 	botSpecs = bot.getMe()
 	botUsername = botSpecs['username']
 	botID = botSpecs['id']
@@ -2784,7 +2733,7 @@ def main():
 	if debugLog is True:
 		logging.info('✅ Bot connected')
 
-	# fancy prints so the user can tell that we're doing something
+	# fancy prints so the user can tell that we're actually doing something
 	if debugMode is False:
 		while True:
 			for i in range(1,4):
