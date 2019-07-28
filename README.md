@@ -21,6 +21,11 @@ OpenWeatherMapin API-avain ei ole pakollinen (laita avaimeksi vaikka `000` jos e
 
 Kun olet saanut botin luotua, nappaa sen API-avain ja käynnistä botti komennolla `apustaja.py -start`.
 
+### To-do
+- users.json -tiedoston siirtäminen yhdeksi .db tiedostoksi
+- settings.json -tiedoston siirtäminen yhdeksi .db tiedostoksi
+- kaiken ryhmä- ja/tai käyttäjädatan poistaminen komennolla
+
 ##### Komennot
 **`/saa`** kertoo sään (oletuksena) Otaniemessä. 
 
