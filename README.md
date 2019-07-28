@@ -45,21 +45,17 @@ Huomioithan: luettuja viestejä ei tallenneta sellaisenaan, vaan niistä muodost
 
 Tietokannan sarakkeet ovat seuraavanlaiset:
 
-`[word1baseform]` | `[word1]` | `[userID]` | `[word2]` | `[count]`
+`[word1baseform]` | `[word1]` | `[word2]` | `[count]`
 
 - `word1baseform` on tallennetun sanan "perusmuoto" joka auttaa lauseiden jatkamisessa luomalla saman muodon esim. erikoismerkkejä sisältäville sanoille (esim. `hei!` ja `hei?` omaisivat sanan perusmuodon `hei`).
 
-- `word1` on ns. pääsana ja `word2` on pääsanan jälkeen esiintynyt sana. Jos sana on tyhjä, merkitsee se lauseen loppua. `count` tallentaa esiintymiskertojen määrän, jonka avulla ketju/viesti muodostetaan todennäköisyyspainotetusti. `userID` on jokaiselle käyttäjälle Telegramin antama uniikki ID, jonka avulla muodostetaan käyttäjäkohtaisia ketjuja.
+- `word1` on ns. pääsana ja `word2` on pääsanan jälkeen esiintynyt sana. Jos sana on tyhjä, merkitsee se lauseen loppua. `count` tallentaa esiintymiskertojen määrän, jonka avulla ketju/viesti muodostetaan todennäköisyyspainotetusti.
 
 Alla on listattu komennon käyttötavat:
 
 - `/markov`: muodostaa viestin koko ryhmän viesteistä.
 
-- `/markov @käyttäjänimi`: muodostaa viestin mainitun käyttäjän viesteistä, jos niitä on olemassa.
-
 - `/markov [lause/sana]`: jatkaa annettua lausetta tai sanaa. Jos lausetta ei voi jatkaa, tuotetaan sen perään täysin annettuun kontekstiin liittymätöntä tekstiä.
-
-- `/markov @käyttäjänimi [lause/sana]`: jatkaa annettua lausetta tai sanaa mainitun käyttäjän viesteillä.
 
 - Voit myös jatkaa viestejä vastaamalla niihin `/markov`-komennolla.
 
@@ -77,6 +73,6 @@ Yksinkertainen text-to-speech -komento, joka muuntaa tekstiä suomenkieliseksi �
 
 - `/tts [teksti]`: muuntaa annetun tekstin ääneksi.
 
-- `/tts /markov`: muodostaa markov-ketjun ja muuntaa sen ääneksi. Voit myös antaa /markov -komennolle lisäargumentteja, eli esim `/tts /markov [käyttäjänimi]`.
+- `/tts /markov`: muodostaa markov-ketjun ja muuntaa sen ääneksi. Voit myös antaa /markov -komennolle lisäargumentteja.
 
 - `/tts` + vastaus viestiin: muuntaa viestin johon komennolla on vastattu ääneksi.
