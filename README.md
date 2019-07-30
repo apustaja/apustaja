@@ -14,6 +14,8 @@ Apustaja vaatii muutamia Python3-kirjastoja toimiakseen. Voit asentaa nämä esi
 - `pydub` on kirjasto jolla muunnetaan äänitiedostoja formaatista toiseen. Apustajan tapauksessa `.mp3` -> `.ogg` `/tts`-komentoa ajettaessa, mikä on välttämätön muunnos jos viestit halutaan lähettää median sijaan ääniviesteinä.
 - `ujson` on normaalin `json`-kirjaston korvaava, varsin suuria nopeutuksia tarjoava kirjasto json-tiedostojen purkamiseen.
 
+---
+
 ### Käyttöönotto
 Ensimmäistä kertaa ajettaessa ohjelma pyytää sekä Telegramin bot-API avainta sekä OpenWeatherMapin API-avainta `/saa`-komentoa varten. Botin API avaimen saat luomalla uuden botin, mikä hoituu lähettämällä viestin `@BotFather` botille Telegramissa. 
 
@@ -21,11 +23,15 @@ OpenWeatherMapin API-avain ei ole pakollinen (laita avaimeksi vaikka `000` jos e
 
 Kun olet saanut botin luotua, nappaa sen API-avain ja käynnistä botti komennolla `apustaja.py -start`.
 
+---
+
 ### To-do
 - users.json -tiedoston siirtäminen yhdeksi .db tiedostoksi
 - settings.json -tiedoston siirtäminen yhdeksi .db tiedostoksi
 - kaiken ryhmä- ja/tai käyttäjädatan poistaminen komennolla
 - /s-komennon siirtäminen käyttämään sed-syntaksia
+
+---
 
 ##### Komennot
 **`/saa`** kertoo sään (oletuksena) Otaniemessä. 
