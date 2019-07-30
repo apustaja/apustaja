@@ -25,6 +25,7 @@ Kun olet saanut botin luotua, nappaa sen API-avain ja käynnistä botti komennol
 - users.json -tiedoston siirtäminen yhdeksi .db tiedostoksi
 - settings.json -tiedoston siirtäminen yhdeksi .db tiedostoksi
 - kaiken ryhmä- ja/tai käyttäjädatan poistaminen komennolla
+- /s-komennon siirtäminen käyttämään sed-syntaksia
 
 ##### Komennot
 **`/saa`** kertoo sään (oletuksena) Otaniemessä. 
