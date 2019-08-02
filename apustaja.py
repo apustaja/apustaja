@@ -19,12 +19,6 @@ try: # get some speedup for json decoding with ujson
 except ImportError:
 	import json
 
-## to-do
-# - remove useless chatDir existence checks (test first if they're ever used)
-# - move settings.json to db format
-# - add option for users to remove their data from the chainStore.db file
-# - add option for chats to clear all of their data
-# - make timer function faster (.db?)
 
 def exitHandler():
 	if debugLog is True:
@@ -770,12 +764,12 @@ def updateDatabase(chainStore, msg):
 	c = conn.cursor()
 
 	for word1 in chainStore:
-		word1baseform = word1.replace(',','').replace('.','').replace('?','').replace('!','').replace('(','').replace(')','').replace('[','').replace(']','').lower()
+		word1baseform = word1.replace(',','').replace('.','').replace('?','').replace('!','').replace('(','').replace(')','').replace('[','').replace(']','').replace('"','').replace('-','').replace('_','').lower()
 		for word2 in chainStore[word1]:
 			oldCount = chainStore[word1][word2]
 
 			try:
-				c.execute("INSERT INTO pairs (word1baseform, word1, word2, count) VALUES (?, ?, ?, 1)", (word1baseform, word1, word2))
+				c.execute("INSERT INTO pairs (word1baseform, word1, word2, count) VALUES (?, ?, ?, ?)", (word1baseform, word1, word2, oldCount))
 			except:
 				c.execute("UPDATE pairs SET count = count + ? WHERE word1baseform = ? AND word1 = ? AND word2 = ?", (oldCount, word1baseform, word1, word2))
 
@@ -924,7 +918,7 @@ def chainGeneration(chat, seed):
 	seedGenSuccess = False
 	if seed is not False: # if we are given a seed, check if it exists in the db.
 		try:
-			word1baseform = seed.replace(',','').replace('.','').replace('?','').replace('!','').replace('(','').replace(')','').replace('[','').replace(']','').lower()
+			word1baseform = seed.replace(',','').replace('.','').replace('?','').replace('!','').replace('(','').replace(')','').replace('[','').replace(']','').replace('"','').replace('-','').replace('_','').lower()
 			c.execute("SELECT word2, count FROM pairs WHERE word1baseform = ? AND word1 = ?", (word1baseform, seed))
 		
 		except Exception as e:
@@ -936,7 +930,7 @@ def chainGeneration(chat, seed):
 		queryReturn = c.fetchall()
 		if len(queryReturn) is 0:
 			# find all word1's with the same baseform
-			baseform = seed.replace(',','').replace('.','').replace('?','').replace('!','').replace('(','').replace(')','').replace('[','').replace(']','').lower()
+			baseform = seed.replace(',','').replace('.','').replace('?','').replace('!','').replace('(','').replace(')','').replace('[','').replace(']','').replace('"','').replace('-','').replace('_','').lower()
 			c.execute("SELECT word1, word2, count FROM pairs WHERE word1baseform = ?", (baseform,))
 
 			queryReturn = c.fetchall()
@@ -1107,7 +1101,7 @@ def chainGeneration(chat, seed):
 			successfulBaseWord = baseWord
 
 			# baseform of baseword
-			baseform = baseWord.replace(',','').replace('.','').replace('?','').replace('!','').replace('(','').replace(')','').replace('[','').replace(']','').lower()
+			baseform = baseWord.replace(',','').replace('.','').replace('?','').replace('!','').replace('(','').replace(')','').replace('[','').replace(']','').replace('"','').replace('-','').replace('_','').lower()
 
 			# check if we have a way of continuing with the chosen baseWord; get all word2's with the same word1
 			c.execute("SELECT word2, count FROM pairs WHERE word1baseform = ? AND word1 = ?", (baseform, baseWord))
@@ -1160,7 +1154,7 @@ def chainGeneration(chat, seed):
 	genmsgLen = len(genmsg.split(' '))
 	while genmsgLen < maxLength:
 		genmsgLen = len(genmsg.split(' '))
-		baseform = baseWord.replace(',','').replace('.','').replace('?','').replace('!','').replace('(','').replace(')','').replace('[','').replace(']','').lower()
+		baseform = baseWord.replace(',','').replace('.','').replace('?','').replace('!','').replace('(','').replace(')','').replace('[','').replace(']','').replace('"','').replace('-','').replace('_','').lower()
 		c.execute("SELECT word2, count FROM pairs WHERE word1baseform = ? AND word1 = ?", (baseform, baseWord))
 
 		queryReturn = c.fetchall()
@@ -1168,7 +1162,7 @@ def chainGeneration(chat, seed):
 		# if we find nothing, try with baseform
 		if len(queryReturn) is 0:
 			# find all word1's with the same baseform
-			baseform = baseWord.replace(',','').replace('.','').replace('?','').replace('!','').replace('(','').replace(')','').replace('[','').replace(']','').lower()
+			baseform = baseWord.replace(',','').replace('.','').replace('?','').replace('!','').replace('(','').replace(')','').replace('[','').replace(']','').replace('"','').replace('-','').replace('_','').lower()
 
 			c.execute("SELECT word1, word2, count FROM pairs WHERE word1baseform = ?", (baseform,))
 
@@ -2104,12 +2098,10 @@ def saa(msg, runCount):
 	else:
 		header = f'{weatherIcon} *{cityName} – {finnWeatherDesc}*\n'
 
-	tempStr = "Lämpötila on {:s} {:+.1f} °C".format(feelslike,temp)
-	if weatherIcon == '☀️' and temp >= 26 and countryCode == 'FI':
-			tempStr += ' 🔥'
+	tempStr = "Lämpötila on {:s} {:+.1f} °C.".format(feelslike,temp)
 
-	mid = "\n{:s} {:.1f} m/s {:s}tuuli\n".format(windSpeedDesc,wind,windDesc)
-	hp = "Ilmanpaine on {:.1f} hPa \nIlmankosteus on {:.1f} RH%".format(pressure,humidity)
+	mid = "\n{:s} {:.1f} m/s {:s}tuuli.\n".format(windSpeedDesc,wind,windDesc)
+	hp = "Ilmanpaine on {:.1f} hPa.\nIlmankosteus on {:.1f} RH%.".format(pressure,humidity)
 	
 	if countryCode != 'FI':
 		weatherReply = header + tempStr + mid + hp + rainStr + precipStr + timeStr
