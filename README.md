@@ -41,7 +41,9 @@ Kun olet saanut botin luotua, nappaa sen API-avain ja käynnistä botti komennol
 
 ---
 
-**`/webcam`** hakee noin vartin välein päivittyvän tilannekuvan Aalto-yliopiston ylläpitämiltä, Väreelle päin suunnatuilta webkameroilta. Vaihtoehtoina joko `väre` tai `mt13`/`maarintie`, jolloin komento toimii esimerkiksi tyyliin `/webcam väre`. Otetut kuvat tallentuvat `/data/webcam` -kansioon, mutta kuvia ei säilytetä viimeisintä kuvaa enempää.
+**[RIKKI] `/webcam`** hakee noin vartin välein päivittyvän tilannekuvan Aalto-yliopiston ylläpitämiltä, Väreelle päin suunnatuilta webkameroilta. Vaihtoehtoina joko `väre` tai `mt13`/`maarintie`, jolloin komento toimii esimerkiksi tyyliin `/webcam väre`. Otetut kuvat tallentuvat `/data/webcam` -kansioon, mutta kuvia ei säilytetä viimeisintä kuvaa enempää.
+
+**Huom** Kuvat eivät ole päivittyneet Aallon palvelimille huhtikuusta alkaen, eli komennon lähettämät kuvat eivät enää muutu eikä kuvassa oleva kellonaika pidä paikkaansa.
 
 ---
 
@@ -82,3 +84,21 @@ Yksinkertainen text-to-speech -komento, joka muuntaa tekstiä suomenkieliseksi �
 - `/tts /markov`: muodostaa markov-ketjun ja muuntaa sen ääneksi. Voit myös antaa /markov -komennolle lisäargumentteja.
 
 - `/tts` + vastaus viestiin: muuntaa viestin johon komennolla on vastattu ääneksi.
+
+--
+
+**`/wordcloud`**
+
+Muodosta sanapilvi ryhmään lähetetyistä viesteistä. Käyttää samaa tietokantaa kuin /markov-komento, eli pilveä ei muodosteta tekstistä vaan sanojen esiintymistodennäköisyyksistä.
+
+--
+
+**`/tuet`**
+
+Milloin opintotuki tulee? Ei toistaiseksi kerro asumistuen saapumispäivää.
+
+--
+
+**`/roll`**
+
+Gettaa tuplat. Lisäargumentteina on myös /roll [kolikko] ja /roll [noppa].
