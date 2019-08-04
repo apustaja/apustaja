@@ -12,3 +12,6 @@ calendar
 logging
 mtranslate
 urllib
+matplotlib
+wordcloud
+atexit
