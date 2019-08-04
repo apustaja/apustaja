@@ -2,6 +2,8 @@
 import os, io, sys, time, ssl, random, datetime, calendar, logging, re, atexit
 import telepot, gtts, urllib.request, holidays, multiprocessing, pytz, sqlite3
 
+from matplotlib import pyplot as plt
+from wordcloud import WordCloud
 from sqlite3 import OperationalError
 from mtranslate import translate
 from pydub import AudioSegment
@@ -19,7 +21,6 @@ try: # get some speedup for json decoding with ujson
 except ImportError:
 	import json
 
-
 def exitHandler():
 	if debugLog is True:
 		logging.info('😴 Program closing')
@@ -34,7 +35,7 @@ def handle(msg):
 			logging.info(f'Failure in glance: {msg}')
 		return
 
-	chatDir = 'data/chats/' + str(chat)
+	chatDir = f'data/chats/{chat}'
 	timestamp = time.time()
 	today = datetime.datetime.today()
 
@@ -95,20 +96,21 @@ def handle(msg):
 				return
 
 		header = f'🤖 *Apustaja versio {versionumero}*\n'
-		mid = f'Hei, olen Apustaja! Alla on listattuna kasa komentoja joita voit käyttää. '
+		mid = f'Hei, olen Apustaja! 👋 Alla on listattuna kasa komentoja joita voit käyttää.'
 		mid += 'Tarkempaa tietoa komennoista saat kokeilemalla niitä tai lukemalla tarkat ohjeet Githubista!\n\n'
 
-		cmdMarkov = f'*/markov:* Muodosta satunnaisgeneroituja viestejä (Botnet? Lue Github!)\n'
+		cmdMarkov = f'*/markov:* Muodosta satunnaisgeneroituja viestejä (tarkempi selitys Githubissa)\n'
 		cmdUM = f'*/um:* Uhka vai mahdollisuus?\n'
 		cmdSaa = f'*/saa:* Kertoo tämänhetkisen sään. Oletuskaupungin voit asettaa komennolla `[/settings saa defaultCity]`\n'
 		cmdRoll = f'*/roll:* Heitä kolikkoa, gettaa tuplat tai pyöritä noppaa\n'
 		cmdReplace = f'*/s:* Korvaa jonkun muun viestissä tekstiä toisella tekstillä\n'
 		cmdTts = f'*/tts:* Muuta tekstiä ääneksi esimerkiksi vastaamalla viestiin tai ajamalla `[/tts /markov]`\n'
-		cmdSett = f'*/settings:* Muuta Apustajan ryhmäkohtaisia asetuksia `[admineille]`\n'
-		cmdInfo = f'*/info:* Tilastoja, faktoja ja analyysejä.\n\n'
+		cmdCloud = f'*/wordcloud:* Muodosta sanapilvi ryhmän sanoista\n'
+		cmdInfo = f'*/info:* Tilastoja, faktoja ja analyysejä.\n'
+		cmdSett = f'*/settings:* Muuta Apustajan ryhmäkohtaisia asetuksia `[admineille]`\n\n'
 		gitInfo = f'🤙 *Hostaa itse, forkkaa tai ihmettele spagettikoodia!*\nhttps://github.com/apustaja/apustaja'
 
-		replymsg = header+mid+cmdMarkov+cmdUM+cmdSaa+cmdRoll+cmdReplace+cmdTts+cmdSett+cmdInfo+gitInfo
+		replymsg = header+mid+cmdMarkov+cmdUM+cmdSaa+cmdRoll+cmdReplace+cmdTts+cmdCloud+cmdInfo+cmdSett+gitInfo
 		bot.sendMessage(chat, replymsg, parse_mode='Markdown')
 
 		if debugLog is True:
@@ -129,9 +131,6 @@ def handle(msg):
 
 	# store message if it doesn't _start_ as a bot command. We don't care if it has a (probably unintended) command in it somewhere else
 	if content_type == 'text' and commandSplit[0][0] != '/':
-		if not os.path.isfile(chatDir + 'chainStore.db'):
-			createDatabase(msg)
-
 		# update database
 		updateDatabase(parseMessage(msg), msg)
 
@@ -150,76 +149,68 @@ def handle(msg):
 
 			# if /markov
 			if command == validCommands[0].lower() or command == validCommandsAlt[0]:
-				if timerHandle(msg,command) is False:
-					return
+				if timerHandle(msg,command):
+					bot.sendChatAction(chat, action='typing')
+					markov(msg, commandSplit, chat)
 
-				bot.sendChatAction(chat, action='typing')
-				markov(msg, commandSplit, chat)
 				return
 			
 			# if /s
 			elif command == validCommands[1] or command == validCommandsAlt[1]:
-				if timerHandle(msg,command) is False:
-					return
+				if timerHandle(msg,command):
+					bot.sendChatAction(chat, action='typing')
+					replace(msg)
 
-				bot.sendChatAction(chat, action='typing')
-				replace(msg)
 				return
 
 			# /info 
 			elif command == validCommands[2] or command == validCommandsAlt[2]:
-				if timerHandle(msg,command) is False:
-					return
+				if timerHandle(msg,command):
+					bot.sendChatAction(chat, action='typing')
+					replymsg = info(msg)
+					bot.sendMessage(msg['chat']['id'], replymsg, parse_mode="Markdown")
 
-				bot.sendChatAction(chat, action='typing')
-
-				replymsg = info(msg)
-				bot.sendMessage(msg['chat']['id'], replymsg, parse_mode="Markdown")
 				return
 
 			# /saa
 			elif command == validCommands[3] or command == validCommandsAlt[3]:
-				if timerHandle(msg,command) is False:
-					return
-
-				bot.sendChatAction(chat, action='typing')
-				weatherReply = saa(msg,0)
-				bot.sendMessage(msg['chat']['id'], weatherReply, parse_mode="Markdown")
+				if timerHandle(msg,command):
+					bot.sendChatAction(chat, action='typing')
+					weatherReply = saa(msg,0)
+					bot.sendMessage(msg['chat']['id'], weatherReply, parse_mode="Markdown")
+				
 				return
 
 			# /tuet
 			elif command == validCommands[4] or command == validCommandsAlt[4]:
-				if timerHandle(msg,command) is False:
-					return
+				if timerHandle(msg,command):
+					bot.sendChatAction(chat, action='typing')
+					tuet(msg)
 
-				bot.sendChatAction(chat, action='typing')
-				tuet(msg)
 				return
 
 			# /um
 			elif command == validCommands[5] or command == validCommandsAlt[5]:
-				if timerHandle(msg,command) is False:
-					return
+				if timerHandle(msg,command):
+					bot.sendChatAction(chat, action='typing')
 
-				bot.sendChatAction(chat, action='typing')
+					respstr = um()
+					commandSplit = msg['text'].lower().strip().split(" ")
 
-				respstr = um()
-				commandSplit = msg['text'].lower().strip().split(" ")
-
-				# reply to a message, with only /um and no extra arguments; reply to replied message
-				if 'reply_to_message' in msg and len(commandSplit) is 1:
-					bot.sendMessage(chat, respstr, reply_to_message_id=msg['reply_to_message']['message_id'])
-				
-				# reply to a message, but there are extra arguments; reply to sender
-				elif 'reply_to_message' in msg and len(commandSplit) > 1:
-					bot.sendMessage(chat, respstr, reply_to_message_id=msg['message_id'])
-				
-				# not a reply to a message. If no args, just generate text.
-				elif not 'reply_to_message' in msg: 
-					if len(commandSplit) > 1:
+					# reply to a message, with only /um and no extra arguments; reply to replied message
+					if 'reply_to_message' in msg and len(commandSplit) is 1:
+						bot.sendMessage(chat, respstr, reply_to_message_id=msg['reply_to_message']['message_id'])
+					
+					# reply to a message, but there are extra arguments; reply to sender
+					elif 'reply_to_message' in msg and len(commandSplit) > 1:
 						bot.sendMessage(chat, respstr, reply_to_message_id=msg['message_id'])
-					else:
-						bot.sendMessage(chat, respstr)
+					
+					# not a reply to a message. If no args, just generate text.
+					elif not 'reply_to_message' in msg: 
+						if len(commandSplit) > 1:
+							bot.sendMessage(chat, respstr, reply_to_message_id=msg['message_id'])
+						else:
+							bot.sendMessage(chat, respstr)
 
 				return
 
@@ -232,71 +223,75 @@ def handle(msg):
 
 			# /tts
 			elif command == validCommands[7] or command == validCommandsAlt[7]:
-				if timerHandle(msg,command) is False:
-					return
-
-				if len(commandSplit) > 1:
-					bot.sendChatAction(chat, action='record_audio')
-					tts(msg,'text')
-				else:
-					# no text; check if it was a reply to a message
-					if 'reply_to_message' in msg:
-						if 'text' in msg['reply_to_message']:
-							if len(msg['reply_to_message']['text']) is not 0:
-								bot.sendChatAction(chat, action='record_audio')
-								tts(msg,'reply')
-
-						elif 'caption' in msg['reply_to_message']:
-							if len(msg['reply_to_message']['caption']) is not 0:
-								bot.sendChatAction(chat, action='record_audio')
-								
-								# modify message's content
-								captionText = msg['reply_to_message']['caption']
-								msg['reply_to_message']['text'] = captionText
-
-								tts(msg,'reply')
+				if timerHandle(msg,command):
+					if len(commandSplit) > 1:
+						bot.sendChatAction(chat, action='record_audio')
+						tts(msg,'text')
 					else:
-						bot.sendChatAction(chat, action='typing')
-						bot.sendMessage(chat, '*Käyttö:* /tts [teksti], /tts [/markov] tai /tts vastauksena viestiin.', reply_to_message_id=msg['message_id'], parse_mode='Markdown')
+						# no text; check if it was a reply to a message
+						if 'reply_to_message' in msg:
+							if 'text' in msg['reply_to_message']:
+								if len(msg['reply_to_message']['text']) is not 0:
+									bot.sendChatAction(chat, action='record_audio')
+									tts(msg,'reply')
+
+							elif 'caption' in msg['reply_to_message']:
+								if len(msg['reply_to_message']['caption']) is not 0:
+									bot.sendChatAction(chat, action='record_audio')
+									
+									# modify message's content
+									captionText = msg['reply_to_message']['caption']
+									msg['reply_to_message']['text'] = captionText
+
+									tts(msg,'reply')
+						else:
+							bot.sendChatAction(chat, action='typing')
+							bot.sendMessage(chat, '*Käyttö:* /tts [teksti], /tts [/markov] tai /tts vastauksena viestiin.', reply_to_message_id=msg['message_id'], parse_mode='Markdown')
 
 				return
 
 			# /webcam
 			elif command == validCommands[8] or command == validCommandsAlt[8]:
-				if timerHandle(msg,command) is False:
-					return
+				if timerHandle(msg,command):
+					webcam(msg)
 
-				webcam(msg)
 				return
 
 			# /roll
 			elif command == validCommands[9] or command == validCommandsAlt[9]:
-				if timerHandle(msg,command) is False:
-					return
+				if timerHandle(msg,command):
+					bot.sendChatAction(chat, action='typing')
+					roll(msg)
 
-				bot.sendChatAction(chat, action='typing')
-				roll(msg)
 				return
 
-			# /start
+			# /start or help
 			elif command == validCommands[10] or command == validCommandsAlt[10] or command == validCommands[11] or command == validCommandsAlt[11]:
 				# construct info message
 				header = f'🤖 *Apustaja versio {versionumero}*\n'
 				mid = f'Hei, olen Apustaja! Alla on listattuna kasa komentoja joita voit käyttää. '
 				mid += 'Tarkempaa tietoa komennoista saat kokeilemalla niitä tai lukemalla tarkat ohjeet Githubista!\n\n'
 
-				cmdMarkov = f'*/markov:* Muodosta satunnaisgeneroituja viestejä (Botnet? Lue Github!)\n'
+				cmdMarkov = f'*/markov:* Muodosta satunnaisgeneroituja viestejä (tarkempi selitys Githubissa)\n'
 				cmdUM = f'*/um:* Uhka vai mahdollisuus?\n'
 				cmdSaa = f'*/saa:* Kertoo tämänhetkisen sään. Oletuskaupungin voit asettaa komennolla `[/settings saa defaultCity]`\n'
 				cmdRoll = f'*/roll:* Heitä kolikkoa, gettaa tuplat tai pyöritä noppaa\n'
 				cmdReplace = f'*/s:* Korvaa jonkun muun viestissä tekstiä toisella tekstillä\n'
 				cmdTts = f'*/tts:* Muuta tekstiä ääneksi esimerkiksi vastaamalla viestiin tai ajamalla `[/tts /markov]`\n'
-				cmdSett = f'*/settings:* Muuta Apustajan ryhmäkohtaisia asetuksia `[admineille]`\n'
+				cmdCloud = f'*/wordcloud:* Muodosta sanapilvi ryhmän sanoista\n'
 				cmdInfo = f'*/info:* Tilastoja, faktoja ja analyysejä.\n'
-				gitInfo = f'\n🤙 *Hostaa itse, forkkaa tai ihmettele spagettikoodia!*\nhttps://github.com/apustaja/apustaja'
+				cmdSett = f'*/settings:* Muuta Apustajan ryhmäkohtaisia asetuksia `[admineille]`\n\n'
+				gitInfo = f'🤙 *Hostaa itse, forkkaa tai ihmettele spagettikoodia!*\nhttps://github.com/apustaja/apustaja'
 
-				replymsg = header+mid+cmdMarkov+cmdUM+cmdSaa+cmdRoll+cmdReplace+cmdTts+cmdSett+cmdInfo+gitInfo
+				replymsg = header+mid+cmdMarkov+cmdUM+cmdSaa+cmdRoll+cmdReplace+cmdTts+cmdCloud+cmdInfo+cmdSett+gitInfo
 				bot.sendMessage(chat, replymsg, parse_mode='Markdown')
+
+				return
+
+			# /wordcloud
+			elif command == validCommands[12] or command == validCommandsAlt[12]:
+				if timerHandle(msg,command):
+					wordCloud(msg)
 
 				return
 
@@ -312,7 +307,7 @@ def migrateStats(oldID, newID):
 	try: # check if stats db exists
 		statsCursor.execute("CREATE TABLE stats (chatID INTEGER, msgCount INTEGER, cmdCount INTEGER)")
 	except sqlite3.OperationalError:
-		pass # database exists, pass	
+		pass # database exists, pass
 
 	try: # if there are any old stats, simply insert a new chatID into the db, replacing the old one
 		statsCursor.execute("UPDATE stats SET chatID = ? WHERE chatID = ?", (newID, oldID))	
@@ -354,26 +349,27 @@ def updateStats(msg, type):
 
 def settings(msg):
 	content_type, chat_type, chat = telepot.glance(msg, flavor="chat")
+	chatDir = f'data/chats/{chat}'
+	settingsPath = os.path.join(chatDir,'settings.json')
 
 	# check if caller is an admin
 	sender = bot.getChatMember(chat, msg['from']['id'])
 	chatType = bot.getChat(chat)['type']
 
-	if chatType == 'private' or sender['status'] == 'creator' or sender['status'] == 'administrator':
-		None
-	else:
-		bot.sendMessage(chat, 'Komentoa voi kutsua vain ryhmän admin.',reply_to_message_id=msg['message_id'])
+	# if the user isn't an admin or the creator of a group and we're not in a private chat, abort
+	if chatType != 'private' and sender['status'] != 'creator' and sender['status'] != 'administrator':
+		bot.sendMessage(chat, '⚠️ Komentoa voi kutsua vain ryhmän admin.',reply_to_message_id=msg['message_id'])
 		return
 
 	# /settings [arg1] [arg2] [arg3]
 	validArg1 = ['timer', 'status', 'saa', 'tts']
 
 	# start off by generating setting file for chat, if it doesn't exist already
-	if not os.path.isfile("data/chats/" + str(chat) + "/settings.json"):
-		if not os.path.isdir("data/chats/" + str(chat)):
-			os.mkdir("data/chats/" + str(chat))
+	if not os.path.isfile(settingsPath):
+		if not os.path.isdir(chatDir):
+			os.mkdir(chatDir)
 
-		with open("data/chats/" + str(chat) +  "/settings.json", 'w') as jsonData:
+		with open(settingsPath, 'w') as jsonData:
 			settingMap = {} # empty .json file
 			
 			# generate fields
@@ -390,9 +386,9 @@ def settings(msg):
 	# parse message
 	commandSplit = msg['text'].lower().strip().split(" ") # [0] is the command itself
 
-	# only /settings called; print current settings
+	# only /settings called; send a help message
 	if len(commandSplit) is 1:
-		header = '*Apustajan ryhmä- ja komentokohtaiset asetukset*\n'
+		header = '🔧 *Apustajan ryhmä- ja komentokohtaiset asetukset*\n'
 		mid = '*Huom:* komennon kutsujan tulee olla ryhmän admin tai perustaja.'
 		low = '*Lisäargumentit:* timer, status, saa, tts\n'
 		replymsg = header + low + mid
@@ -418,16 +414,16 @@ def settings(msg):
 
 						try:
 							float(timer)
-							with open("data/chats/" + str(chat) +  "/settings.json", 'w') as jsonData:
+							with open(settingsPath, 'w') as jsonData:
 								settingMap['commandTimers'][timerCommand] = timer # store as string
 								json.dump(settingMap, jsonData, indent=4, sort_keys=True)
 								bot.sendMessage(chat,'✅ Asetus päivitetty onnistuneesti!',reply_to_message_id=msg['message_id'])
 						
 						except ValueError:
-							bot.sendMessage(chat,'Annettu aika ei ole numero.',reply_to_message_id=msg['message_id'])
+							bot.sendMessage(chat,'⚠️ Annettu aika ei ole numero.',reply_to_message_id=msg['message_id'])
 					
 					elif commandSplit[2] == 'settings':
-						bot.sendMessage(chat,'/settings komentoa ei voi aikarajoittaa!',reply_to_message_id=msg['message_id'])
+						bot.sendMessage(chat,'⚠️ /settings komentoa ei voi aikarajoittaa!',reply_to_message_id=msg['message_id'])
 				
 				else:
 					top = '*Rajoita tai estä komennon kutsuminen*\n'
@@ -443,7 +439,7 @@ def settings(msg):
 				ajastimet = ''
 
 				try:
-					with open("data/chats/" + str(chat) +  "/settings.json", 'r') as jsonData:
+					with open(settingsPath, 'r') as jsonData:
 						settingMap = json.load(jsonData)
 						for key, value in settingMap['commandTimers'].items():
 							if float(value) < 0:
@@ -458,10 +454,10 @@ def settings(msg):
 					bot.sendMessage(chat, replyMsg, parse_mode='Markdown')
 
 				except FileNotFoundError:
-					if not os.path.isdir("data/chats/" + str(chat)):
-						os.mkdir("data/chats/" + str(chat))
+					if not os.path.isdir(chatDir):
+						os.mkdir(chatDir)
 
-					with open("data/chats/" + str(chat) +  "/settings.json", 'w') as jsonData:
+					with open(settingsPath, 'w') as jsonData:
 						settingMap = {} # empty .json file
 						
 						# generate fields
@@ -491,19 +487,19 @@ def settings(msg):
 
 							m += 1
 
-						with open("data/chats/" + str(chat) +  "/settings.json") as jsonData:
+						with open(settingsPath) as jsonData:
 							settingMap = json.load(jsonData)
 
 						try:
 							settingMap['saa']['defaultCity'] = newDefault
-							with open("data/chats/" + str(chat) +  "/settings.json", 'w') as jsonData:
+							with open(settingsPath, 'w') as jsonData:
 								json.dump(settingMap, jsonData, indent=4, sort_keys=True)
 						
 						except KeyError:
 							settingMap['saa'] = {}
 							settingMap['saa']['defaultCity'] = newDefault
 
-							with open("data/chats/" + str(chat) +  "/settings.json", 'w') as jsonData:
+							with open(settingsPath, 'w') as jsonData:
 								json.dump(settingMap, jsonData, indent=4, sort_keys=True)
 
 						bot.sendMessage(chat, '✅ Oletuskaupunki päivitetty onnistuneesti!')
@@ -532,7 +528,7 @@ def settings(msg):
 									break
 
 						else:
-							bot.sendMessage(chat,'Not a valid language!\nUsage example: /settings tts defaultLanguage French')
+							bot.sendMessage(chat,'⚠️ Not a valid language!\nUsage example: /settings tts defaultLanguage French')
 							return
 
 						with open("data/chats/" + str(chat) +  "/settings.json") as jsonData:
@@ -540,14 +536,14 @@ def settings(msg):
 
 							try:
 								settingMap['tts']['defaultLanguage'] = defaultLanguage
-								with open("data/chats/" + str(chat) +  "/settings.json", 'w') as jsonData:
+								with open(settingsPath, 'w') as jsonData:
 									json.dump(settingMap, jsonData, indent=4, sort_keys=True)
 							
 							except KeyError:
 								settingMap['tts'] = {}
 								settingMap['tts']['defaultLanguage'] = defaultLanguage
 
-								with open("data/chats/" + str(chat) +  "/settings.json", 'w') as jsonData:
+								with open(settingsPath, 'w') as jsonData:
 									json.dump(settingMap, jsonData, indent=4, sort_keys=True)
 
 							bot.sendMessage(chat, '✅ Oletuskieli päivitetty onnistuneesti!')
@@ -557,20 +553,26 @@ def settings(msg):
 
 
 			else:
-				bot.sendMessage(chat,'Ei kelpaava komento!')
+				bot.sendMessage(chat,'⚠️ Ei kelpaava komento!')
 
 	return
 
 
 def unescapematch(matchobj):
+	# cleans up Unicode dark magic from strings before parsing them
+	# credit: StackOverflow
 	escapesequence = matchobj.group(0)
 	digits = escapesequence[2:]
 	ordinal = int(digits, 16)
 	char = unichr(ordinal)
+	
 	return char
 
 
 def timerHandle(msg,command):
+	content_type, chat_type, chat = telepot.glance(msg, flavor="chat")
+	chatDir = f'data/chats/{chat}'
+
 	# remove the '/' command prefix
 	command = command.strip('/')
 
@@ -578,17 +580,18 @@ def timerHandle(msg,command):
 		command = command.split('@')
 		command = command[0]
 
-	content_type, chat_type, chat = telepot.glance(msg, flavor="chat")
-
 	# get current time
-	now_called = datetime.datetime.today() # now
+	now_called = datetime.datetime.today()
+
+	# path of the settings file
+	settingsPath = os.path.join(chatDir,'settings.json')
 
 	# check if settings.json exists
-	if not os.path.isfile("data/chats/" + str(chat) + "/settings.json"):
-		if not os.path.isdir("data/chats/" + str(chat)):
-			os.mkdir("data/chats/" + str(chat))
+	if not os.path.isfile(settingsPath):
+		if not os.path.isdir(chatDir):
+			os.mkdir(chatDir)
 
-		with open("data/chats/" + str(chat) +  "/settings.json", 'w') as jsonData:
+		with open(settingsPath, 'w') as jsonData:
 			settingMap = {} # empty .json file
 			
 			# generate fields
@@ -600,7 +603,7 @@ def timerHandle(msg,command):
 			json.dump(settingMap, jsonData, indent=4, sort_keys=True)
 
 	# load settings
-	with open("data/chats/" + str(chat) +  "/settings.json", 'r') as jsonData:
+	with open(settingsPath, 'r') as jsonData:
 		settingMap = json.load(jsonData)
 
 	# load timer for command
@@ -608,24 +611,26 @@ def timerHandle(msg,command):
 		timer = float(settingMap['commandTimers'][command])
 	
 	except KeyError:
-		with open("data/chats/" + str(chat) +  "/settings.json", 'w') as jsonData:
-			settingMap = json.load(jsonData)
+		with open(settingsPath, 'w') as jsonData:
 			settingMap['commandTimers'][command] = '2'
 			json.dump(settingMap, jsonData, indent=4, sort_keys=True)
 
 		timer = float(settingMap['commandTimers'][command])
 
-	if timer == -1 or timer < -1:
+	if timer <= -1:
 		return False
 
+	# path of the last.json file, where we store the times commands were called at
+	lastPath = os.path.join(chatDir,'last.json')
+
 	# load time the command was previously called
-	if not os.path.isfile("data/chats/" + str(chat) + "/last.json"):
-		with open("data/chats/" + str(chat) +  "/last.json", 'w') as jsonData:
+	if not os.path.isfile(lastPath):
+		with open(lastPath, 'w') as jsonData:
 			lastMap = {}
 			lastMap[command] = '0'
 			json.dump(lastMap, jsonData, indent=4, sort_keys=True)
 
-	with open("data/chats/" + str(chat) +  "/last.json") as jsonData:
+	with open(lastPath) as jsonData:
 		lastMap = json.load(jsonData)
 
 	try:
@@ -636,15 +641,16 @@ def timerHandle(msg,command):
 
 	if last_called is '0': # never called; store now
 		lastMap[command] = str(now_called) # stringify datetime object, store
-		with open("data/chats/" + str(chat) +  "/last.json", 'w') as jsonData:
+		with open(lastPath, 'w') as jsonData:
 			json.dump(lastMap, jsonData, indent=4, sort_keys=True)
+	
 	else:
 		last_called = datetime.datetime.strptime(last_called, "%Y-%m-%d %H:%M:%S.%f") # unstring datetime object
 		time_since = abs(now_called - last_called)
 
 		if time_since.seconds > timer:
 			lastMap[command] = str(now_called) # stringify datetime object, store
-			with open("data/chats/" + str(chat) +  "/last.json", 'w') as jsonData:
+			with open(lastPath, 'w') as jsonData:
 				json.dump(lastMap, jsonData, indent=4, sort_keys=True)
 		else:
 			return False
@@ -654,7 +660,7 @@ def timerHandle(msg,command):
 
 def createDatabase(msg):
 	content_type, chat_type, chat = telepot.glance(msg, flavor='chat')
-	chatDir = 'data/chats/' + str(chat)
+	chatDir = f'data/chats/{chat}'
 
 	# create folder for chat
 	if not os.path.isdir(chatDir):
@@ -664,7 +670,7 @@ def createDatabase(msg):
 			logging.info('🌟 New chat detected!')
 
 	# Establish connection
-	conn = sqlite3.connect(chatDir + '/' + 'chainStore.db')
+	conn = sqlite3.connect(os.path.join(chatDir,'chainStore.db'))
 	c = conn.cursor()
 
 	try:
@@ -747,20 +753,21 @@ def parseMessage(msg):
 
 def updateDatabase(chainStore, msg): 
 	content_type, chat_type, chat = telepot.glance(msg, flavor='chat')
-	chatDir = 'data/chats/' + str(chat)
+	chatDir = f'data/chats/{chat}'
 
-	# create the folders for the chat if they don't exist
+	# create the folders for the chat if they don't exist (they should, though)
 	if not os.path.isdir(chatDir):
 		if not os.path.isdir('data/chats'):
 			if not os.path.isdir('data'):
 				os.mkdir('data')
-
 			os.mkdir('data/chats')
-
 		os.mkdir(chatDir)
+	
+	if not os.path.isfile(os.path.join(chatDir,'chainStore.db')):
+		createDatabase(msg)
 
 	# Establish connection
-	conn = sqlite3.connect(chatDir + '/' + 'chainStore.db')
+	conn = sqlite3.connect(os.path.join(chatDir,'chainStore.db'))
 	c = conn.cursor()
 
 	for word1 in chainStore:
@@ -780,7 +787,7 @@ def updateDatabase(chainStore, msg):
 
 def tts(msg,kind):
 	content_type, chat_type, chat = telepot.glance(msg, flavor="chat")
-	chatDir = 'data/chats/' + str(chat)
+	chatDir = f'data/chats/{chat}'
 
 	if kind == 'text':
 		commandSplit = msg['text'].lower().strip().split(" ")
@@ -819,25 +826,86 @@ def tts(msg,kind):
 				json.dump(settingMap, jsonData, indent=4, sort_keys=True)
 
 	tts = gTTS(ttsify, lang=defaultLanguage)
-	with open(chatDir + '/tts.mp3', 'wb') as ttsFile:
+	mp3Path, oggPath = os.path.join(chatDir, 'tts.mp3'), os.path.join(chatDir, 'tts.ogg')
+
+	with open(mp3Path, 'wb') as ttsFile:
 		tts.write_to_fp(ttsFile)
 
-	oggVoice = AudioSegment.from_file(chatDir + '/tts.mp3', format='mp3').export(chatDir + '/tts.ogg', format='ogg', codec='libopus')
+	oggVoice = AudioSegment.from_file(mp3Path, format='mp3').export(oggPath, format='ogg', codec='libopus')
 	
 	if kind == 'text':
-		with open(chatDir + '/tts.ogg', 'rb') as ttsSend:
+		with open(oggPath, 'rb') as ttsSend:
 			bot.sendVoice(chat, voice=ttsSend, reply_to_message_id=msg['message_id'])
 	else:
-		with open(chatDir + '/tts.ogg', 'rb') as ttsSend:
+		with open(oggPath, 'rb') as ttsSend:
 			bot.sendVoice(chat, voice=ttsSend)
 
-	os.remove(chatDir + '/tts.mp3')
-	os.remove(chatDir + '/tts.ogg')
+	os.remove(mp3Path)
+	os.remove(oggPath)
+	return
+
+
+def wordCloud(msg):
+	content_type, chat_type, chat = telepot.glance(msg, flavor='chat')
+	chatDir = f'data/chats/{chat}'
+	
+	# establish connection to the chainStore
+	conn = sqlite3.connect(os.path.join(chatDir,'chainStore.db'))
+	c = conn.cursor()
+
+	# pull chat's data
+	c.execute("SELECT word1, count, word1baseform FROM pairs")
+	queryReturn = c.fetchall()
+
+	conn.close()
+
+	# ignore Finnish conjunctions and some other stuff so the cloud looks nicer
+	ignoreWords = [
+		'että', 'et', 'jollei', 'jolleivät', 'jollemme', 'jollen', 'jollet',
+		'jollette', 'jos', 'jotta', 'koska', 'kosk', 'koskei', 'kuin', 'kun',
+		'kunnes', 'ku', 'kun', 'mikäli', 'milloin', 'millon', 'notta', 'vaikka',
+		'eli', 'elikkä', 'entä', 'ja', 'joko', 'lipo', 'mutta', 'mut', 'niin', 'nii',
+		'sekä', 'siis', 'sillä', 'sun', 'tai', 'taikka', 'vaan', 'vai', 'kuin',
+		'kuten', 'myös', 'on', 'olla', 'olisi', 'oli', 'ollut', 'olemme', 'olette',
+		'olen', 'olet', 'jo'
+	]
+
+	# build the frequency dictionary
+	freqDict = {}
+	for row in queryReturn:
+		w1, cnt, w1bf = row[0].lower(), row[1], row[2]
+		if w1 not in ignoreWords and w1bf not in ignoreWords:
+			if w1 not in freqDict:
+				freqDict[w1] = cnt
+			else:
+				freqDict[w1] += cnt
+
+	# define the wordcloud
+	cloud = WordCloud(background_color='white', max_words=500, margin=10, random_state=random.randint(0,314159))
+	cloud = cloud.generate_from_frequencies(freqDict)
+
+	# generate image
+	plt.figure()
+	plt.imshow(cloud, interpolation='bilinear')
+	plt.axis('off')
+
+	# store image temporarily so we can send it
+	pltPath = os.path.join(chatDir,'cloud.png')
+	plt.savefig(pltPath, bbox_inches='tight')
+
+	# send image
+	with open(pltPath, 'rb') as image:
+		bot.sendPhoto(chat_id=chat, photo=image)
+
+	# close plot so it doesn't stay in memory, delete stored image
+	plt.close()
+	os.remove(pltPath)
+
 	return
 
 
 def markov(msg, commandSplit, chat):
-	chatDir = 'data/chats/' + str(chat)
+	chatDir = f'data/chats/{chat}'
 
 	# check if we were given a seed
 	if len(commandSplit) is 1: # if there's ONLY the command, just randomly pick a word
@@ -905,10 +973,10 @@ def markov(msg, commandSplit, chat):
 
 def chainGeneration(chat, seed):
 	# chat directory
-	chatDir = 'data/chats/' + str(chat)
+	chatDir = f'data/chats/{chat}'
 
 	# Establish connection
-	conn = sqlite3.connect(chatDir + '/' + 'chainStore.db')
+	conn = sqlite3.connect(os.path.join(chatDir,'chainStore.db'))
 	c = conn.cursor()
 
 	# We'd usually cut off the sentence at a period, but ignore if the word is listed here
@@ -1490,7 +1558,7 @@ def tuet(msg):
 		replymsg = header + mid + low
 
 	bot.sendMessage(msg['chat']['id'], replymsg, parse_mode="Markdown")
-	
+	return
 
 
 def weatherAPILoad(url):
@@ -2188,7 +2256,6 @@ def webcam(msg):
 		bot.sendMessage(chat_id=chat, text=replyMsg, parse_mode="Markdown")
 
 
-
 def replace(msg):
 	# split command first by taking /s and trailing whitespace out (so 3 chars)
 	arg12 = msg['text'][3:]
@@ -2225,8 +2292,8 @@ def replace(msg):
 		return
 
 
-# used by the thread-pool to parse Alko's webpages
 def alkoCalc(pageURL):
+	# used by the thread-pool to parse Alko's webpages
     page = urlopen(pageURL)
     pageNum = pageURL.split('&PageNumber=')[1]
     soup = BeautifulSoup(page, 'html.parser')
@@ -2308,7 +2375,6 @@ def alkoCalc(pageURL):
 
 
     return
-
 
 
 def alkoOpen():
@@ -2419,7 +2485,7 @@ def alko():
 
 def info(msg):
 	content_type, chat_type, chat = telepot.glance(msg, flavor='chat')
-	chatDir = 'data/chats/' + str(chat)
+	chatDir = f'data/chats/{chat}'
 
 	# read stats db
 	statsConn = sqlite3.connect('data/stats.db')
@@ -2480,12 +2546,11 @@ def info(msg):
 
 	# get chainStore.db file size
 	try:
-		chainStorePath = chatDir + '/chainStore.db'
-		dbSize = float(os.path.getsize(chainStorePath) / 1000000)
+		dbSize = float(os.path.getsize(os.path.join(chatDir,'chainStore.db')) / 1000000)
 	except:
 		dbSize = 0.00
 
-	infomsg1 = "Apustaja versio {:s}\n".format(versionumero)
+	infomsg1 = "Apustaja versio *{:s}* 🌟\n".format(versionumero)
 	localStatsHeader = '*Ryhmän tilastot*\n'
 	localStats1 = 'Viestejä käsitelty: {:d}\n'.format(messages)
 	localStats2 = 'Komentoja käsitelty: {:d}\n'.format(commands)
@@ -2598,7 +2663,7 @@ def main():
 	global debugLog, debugMode
 
 	# current version
-	versionumero = '1.4.5'
+	versionumero = '1.4.6'
 
 	# default
 	start = False
@@ -2608,7 +2673,7 @@ def main():
 	# closing stuff
 	atexit.register(exitHandler)
 
-	# list of args
+	# list of args the program takes
 	startArgs = ['start', '-start']
 	debugArgs = ['log', '-log', 'debug', '-debug']
 	botTokenArgs = ['newbottoken', '-newbottoken']
@@ -2648,11 +2713,11 @@ def main():
 					log = 'data/log.log'
 
 					# disable logging for urllib and requests because jesus fuck they make a lot of spam
-					logging.getLogger("requests").setLevel(logging.WARNING)
-					logging.getLogger("urllib3").setLevel(logging.WARNING)
-					logging.getLogger("gtts").setLevel(logging.WARNING)
-					logging.getLogger("pydub").setLevel(logging.WARNING)
-					logging.getLogger('chardet.charsetprober').setLevel(logging.WARNING)
+					logging.getLogger("requests").setLevel(logging.CRITICAL)
+					logging.getLogger("urllib3").setLevel(logging.CRITICAL)
+					logging.getLogger("gtts").setLevel(logging.CRITICAL)
+					logging.getLogger("pydub").setLevel(logging.CRITICAL)
+					logging.getLogger('chardet.charsetprober').setLevel(logging.CRITICAL)
 
 					logging.basicConfig(filename=log,level=logging.DEBUG,format='%(asctime)s %(message)s', datefmt='%d/%m/%Y %H:%M:%S')
 					logging.info('🤖 Bot started')
@@ -2672,13 +2737,14 @@ def main():
 		firstRun()
 
 	try:
-		with open('data' + '/botSettings.json', 'r') as jsonData:
+		botSettingsPath = os.path.join('data','botSettings.json')
+		with open(botSettingsPath, 'r') as jsonData:
 			settingMap = json.load(jsonData)
 
 	except FileNotFoundError:
 		firstRun()
 
-		with open('data' + '/botSettings.json', 'r') as jsonData:
+		with open(botSettingsPath, 'r') as jsonData:
 			settingMap = json.load(jsonData)
 
 	# token for the Telegram API; get from args or as a text file
@@ -2702,7 +2768,7 @@ def main():
 
 	# valid commands we monitor for
 	global validCommands, validCommandsAlt
-	validCommands = ['/markov','/s','/info','/saa','/tuet', '/um', '/settings', '/tts', '/webcam', '/roll', '/start', '/help']
+	validCommands = ['/markov','/s','/info','/saa','/tuet', '/um', '/settings', '/tts', '/webcam', '/roll', '/start', '/help', '/wordcloud']
 	validCommandsAlt = [] # commands with '@botUsername' appened
 
 	for command in validCommands:
