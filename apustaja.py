@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import os, io, sys, time, ssl, random, datetime, calendar, logging, re, atexit
 import telepot, gtts, urllib.request, holidays, multiprocessing, pytz, sqlite3
-
 from matplotlib import pyplot as plt
 from wordcloud import WordCloud
 from sqlite3 import OperationalError
@@ -11,10 +10,10 @@ from gtts import gTTS
 from datetime import date
 from uptime import uptime
 from urllib.request import urlopen
+from urllib.parse import quote
 from bs4 import BeautifulSoup
 from telepot.loop import MessageLoop
 from multiprocessing import Pool, Process
-from urllib.parse import quote
 
 try: # get some speedup for json decoding with ujson
 	import ujson as json
@@ -60,6 +59,9 @@ def handle(msg):
 
 	# bot removed from chat; delete all chat data permanently
 	if 'left_chat_member' in msg and msg['left_chat_member']['id'] == botID:
+		# move chat statistics to the undefined group
+		anonymizeStats(chat)
+
 		# first remove all files in the folder
 		fileList = []
 		try:
@@ -314,6 +316,44 @@ def migrateStats(oldID, newID):
 	except: # if no stats for chat (should never happen, but let's handle it anyway), create some with the new ID
 		statsCursor.execute("INSERT INTO stats (chatID, msgCount, cmdCount) VALUES (?, ?, ?)", (newID, 0, 0))
 
+	return
+
+
+def anonymizeStats(chat):
+	# open db connection
+	statsConn = sqlite3.connect('data/stats.db')
+	statsCursor = statsConn.cursor()
+
+	try: # check if stats db exists
+		statsCursor.execute("CREATE TABLE stats (chatID INTEGER, msgCount INTEGER, cmdCount INTEGER)")
+	except sqlite3.OperationalError:
+		pass # database exists, pass
+
+	try: # pull the chat's statistics
+		statsCursor.execute("SELECT * FROM stats WHERE chatID = ?", (chat,))
+	except: # if there are no stats, there's nothing we need to do
+		statsConn.close()
+		return
+
+	# one row, in the form of chatID - msgCount - cmdCount
+	queryReturn = statsCursor.fetchall()[0]
+	msgCount = queryReturn[1]
+	cmdCount = queryReturn[2]
+	newID = 0
+	
+	try: # insert the pulled stats into the 0 chatID group
+		statsCursor.execute("INSERT INTO stats (chatID, msgCount, cmdCount) VALUES (?, ?, ?)", (newID, msgCount, cmdCount))
+	except:
+		statsCursor.execute("UPDATE stats SET msgCount = msgCount + ? WHERE chatID = ?", (msgCount, newID))
+		statsCursor.execute("UPDATE stats SET cmdCount = cmdCount + ? WHERE chatID = ?", (cmdCount, newID))
+
+	try: # delete the stats for the chat
+		statsCursor.execute("DELETE FROM stats WHERE chatID = ?", (chat,))
+	except:
+		pass
+
+	statsConn.commit()
+	statsConn.close()
 	return
 
 
@@ -662,6 +702,9 @@ def createDatabase(msg):
 	content_type, chat_type, chat = telepot.glance(msg, flavor='chat')
 	chatDir = f'data/chats/{chat}'
 
+	if os.path.isfile(os.path.join(chatDir,'chainStore.db')):
+		os.remove(os.path.join(chatDir,'chainStore.db'))
+
 	# create folder for chat
 	if not os.path.isdir(chatDir):
 		os.mkdir(chatDir)
@@ -763,7 +806,7 @@ def updateDatabase(chainStore, msg):
 			os.mkdir('data/chats')
 		os.mkdir(chatDir)
 	
-	if not os.path.isfile(os.path.join(chatDir,'chainStore.db')):
+	if not os.path.isfile(os.path.join(chatDir,'chainStore.db')) or os.path.getsize(os.path.join(chatDir,'chainStore.db')) == 0:
 		createDatabase(msg)
 
 	# Establish connection
@@ -1134,7 +1177,12 @@ def chainGeneration(chat, seed):
 		# pull a list from db -> choose random element -> baseWord
 		c.execute("SELECT COUNT(*) AS cnt FROM pairs")
 		cnt = c.fetchall()[0][0]
-		rndIndex = random.randint(0, cnt-1)
+		
+		try:
+			rndIndex = random.randint(0,cnt-1)
+		except ValueError:
+			bot.sendMessage(chat, 'Error: ryhmästä ei ole tarpeeksi dataa!')
+			return
 		
 		c.execute("SELECT word1 FROM pairs LIMIT ?, 1", (rndIndex,))
 		baseWord = c.fetchall()[0][0]
@@ -1161,7 +1209,12 @@ def chainGeneration(chat, seed):
 				return
 
 			cnt = c.fetchall()[0][0]
-			rndIndex = random.randint(0,cnt-1)
+			try:
+				rndIndex = random.randint(0,cnt-1)
+			except ValueError:
+				bot.sendMessage(chat, 'Error: ryhmästä ei ole tarpeeksi dataa!')
+				return
+
 			c.execute("SELECT word1 FROM pairs LIMIT ?, 1", (rndIndex,))
 
 			# now we have a baseword
@@ -1414,6 +1467,8 @@ def roll(msg):
 		bot.sendMessage(chat, repStr, reply_to_message_id=msg['reply_to_message']['message_id'])
 	else:
 		bot.sendMessage(chat, repStr, reply_to_message_id=msg['message_id'])
+
+	return
 
 
 def um():
@@ -2768,7 +2823,7 @@ def main():
 
 	# valid commands we monitor for
 	global validCommands, validCommandsAlt
-	validCommands = ['/markov','/s','/info','/saa','/tuet', '/um', '/settings', '/tts', '/webcam', '/roll', '/start', '/help', '/wordcloud']
+	validCommands = ['/markov','/s','/info','/saa','/tuet','/um','/settings','/tts','/webcam','/roll','/start','/help','/wordcloud']
 	validCommandsAlt = [] # commands with '@botUsername' appened
 
 	for command in validCommands:
