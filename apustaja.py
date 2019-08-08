@@ -293,6 +293,7 @@ def handle(msg):
 			# /wordcloud
 			elif command == validCommands[12] or command == validCommandsAlt[12]:
 				if timerHandle(msg,command):
+					bot.sendChatAction(chat, action='upload_photo')
 					wordCloud(msg)
 
 				return
@@ -316,6 +317,8 @@ def migrateStats(oldID, newID):
 	except: # if no stats for chat (should never happen, but let's handle it anyway), create some with the new ID
 		statsCursor.execute("INSERT INTO stats (chatID, msgCount, cmdCount) VALUES (?, ?, ?)", (newID, 0, 0))
 
+	statsConn.commit()
+	statsConn.close()
 	return
 
 
@@ -910,7 +913,8 @@ def wordCloud(msg):
 		'eli', 'elikkä', 'entä', 'ja', 'joko', 'lipo', 'mutta', 'mut', 'niin', 'nii',
 		'sekä', 'siis', 'sillä', 'sun', 'tai', 'taikka', 'vaan', 'vai', 'kuin',
 		'kuten', 'myös', 'on', 'olla', 'olisi', 'oli', 'ollut', 'olemme', 'olette',
-		'olen', 'olet', 'jo'
+		'olen', 'olet', 'ole', 'jo', 'mitä', 'se', 'nyt', 'sen', 'ei', 'vain', 'en',
+		'vain', 'joko', 'ovat', 'joka'
 	]
 
 	# build the frequency dictionary
@@ -924,11 +928,17 @@ def wordCloud(msg):
 				freqDict[w1] += cnt
 
 	# define the wordcloud
-	cloud = WordCloud(background_color='white', max_words=500, margin=10, random_state=random.randint(0,314159))
+	cloud = WordCloud(
+		background_color='white',
+		max_words=300, margin=10,
+		width=1000, height=500,
+		random_state=random.randint(0,314159)
+		)
+
 	cloud = cloud.generate_from_frequencies(freqDict)
 
 	# generate image
-	plt.figure()
+	plt.figure(figsize=(6,4), dpi=450)
 	plt.imshow(cloud, interpolation='bilinear')
 	plt.axis('off')
 
@@ -1408,6 +1418,7 @@ def chainGeneration(chat, seed):
 			except IndexError as e: # used to catch empty words and pass them silently
 				pass
 
+	conn.close()
 	return genmsg
 
 
@@ -1808,22 +1819,22 @@ def saa(msg, runCount):
 			try:
 				precip = weatherJSON['list'][1]['rain']['3h']
 				rainStr = "\n\n☔️ Sateita seuraavan kolmen tunnin aikana."
-				precipStr = " Ennustettu sademäärä noin {:.2f} mm.".format(precip)
+				precipStr = "\nEnnustettu sademäärä noin {:.2f} mm.".format(precip)
 			except KeyError:
 				precip = weatherJSON['list'][0]['rain']['3h']
 				rainStr = "\n\n☔️ Sateita seuraavan tunnin aikana."
-				precipStr = " Ennustettu sademäärä noin {:.2f} mm.".format(precip)
+				precipStr = "\nEnnustettu sademäärä noin {:.2f} mm.".format(precip)
 
 		elif weatherCond == 'Snow' or weatherCondNext == 'Snow':
 			rain = True
 			try:
 				precip = weatherJSON['list'][1]['snow']['3h']
 				rainStr = "\n\n❄️ Lumisateita seuraavan kolmen tunnin aikana."
-				precipStr = " Ennustettu sademäärä noin {:.2f} mm.".format(precip)
+				precipStr = "\nEnnustettu sademäärä noin {:.2f} mm.".format(precip)
 			except KeyError:
 				precip = weatherJSON['list'][0]['snow']['3h']
 				rainStr = "\n\n❄️ Lumisateita seuraavan tunnin aikana."
-				precipStr = " Ennustettu sademäärä noin {:.2f} mm.".format(precip)
+				precipStr = "\nEnnustettu sademäärä noin {:.2f} mm.".format(precip)
 
 	else:
 		if ForecastValidityLeft is 1:
@@ -1918,7 +1929,7 @@ def saa(msg, runCount):
 			else:		
 				rainStr = "\n\n❄️ Lumisateita seuraavan {:s}tunnin aikana.".format(tunnit)
 			
-			precipStr = " Ennustettu sademäärä noin {:.2f} mm.".format(precip)
+			precipStr = "\nEnnustettu sademäärä noin {:.2f} mm.".format(precip)
 
 	if rain is False:
 		rainStr = ''
@@ -2718,7 +2729,7 @@ def main():
 	global debugLog, debugMode
 
 	# current version
-	versionumero = '1.4.6'
+	versionumero = '1.4.61'
 
 	# default
 	start = False
