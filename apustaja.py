@@ -1269,9 +1269,7 @@ def chainGeneration(chat, seed):
 
 		baseWord = nextWord
 		if len(baseWord) is not 0:
-			if baseWord[-1] == '.':
-				return baseWord
-			elif baseWord[0] == '>':
+			if baseWord[0] == '>':
 				separator = '\n'
 			else:
 				separator = ' '
@@ -1282,6 +1280,9 @@ def chainGeneration(chat, seed):
 			genmsg = successfulBaseWord.capitalize() + separator + nextWord
 		else:
 			genmsg = successfulBaseWord + separator + nextWord
+
+		if nextWord[-1] == '.':
+			return genmsg
 
 	# now we're 100% certain we have a baseWord; start regular sentence generation
 	# generate a random sentence length
