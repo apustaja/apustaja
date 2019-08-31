@@ -2735,7 +2735,7 @@ def main():
 	global debugLog, debugMode
 
 	# current version
-	versionumero = '1.4.62'
+	versionumero = '1.4.7'
 
 	# default
 	start = False
