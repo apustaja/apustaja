@@ -1198,7 +1198,9 @@ def chainGeneration(chat, seed):
 		baseWord = c.fetchall()[0][0]
 
 		if len(baseWord) is not 0:
-			if baseWord[0] == '>':
+			if baseWord[-1] == '.':
+				return baseWord
+			elif baseWord[0] == '>':
 				separator = '\n'
 			else:
 				separator = ' '
@@ -1707,7 +1709,11 @@ def saa(msg, runCount):
 		timesplit = data.split(":")
 		datasplit = timesplit[1].split(",")
 
-		temp = float(datasplit[0].split(" ")[1])
+		try:
+			temp = float(datasplit[0].split(" ")[1])
+		except ValueError:
+			errormsg = '⚠️ Virhe yhdistettäessä sääpalveluun – kokeile uudelleen myöhemmin!'
+			return errormsg
 		humidity = float(datasplit[1].split(" ")[1])
 		pressure = float(datasplit[2].split(" ")[1])
 		lux = float(datasplit[3].split(" ")[1])
@@ -2729,7 +2735,7 @@ def main():
 	global debugLog, debugMode
 
 	# current version
-	versionumero = '1.4.61'
+	versionumero = '1.4.62'
 
 	# default
 	start = False
