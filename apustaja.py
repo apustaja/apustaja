@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-#!/usr/bin/python3
 import os, io, sys, time, ssl, random, datetime, calendar, logging, re, atexit
 import telepot, gtts, urllib.request, holidays, multiprocessing, pytz, sqlite3
 from matplotlib import pyplot as plt
@@ -1199,9 +1198,7 @@ def chainGeneration(chat, seed):
 		baseWord = c.fetchall()[0][0]
 
 		if len(baseWord) is not 0:
-			if baseWord[-1] == '.':
-				return baseWord
-			elif baseWord[0] == '>':
+			if baseWord[0] == '>':
 				separator = '\n'
 			else:
 				separator = ' '
@@ -1270,7 +1267,9 @@ def chainGeneration(chat, seed):
 
 		baseWord = nextWord
 		if len(baseWord) is not 0:
-			if baseWord[0] == '>':
+			if baseWord[-1] == '.':
+				return baseWord
+			elif baseWord[0] == '>':
 				separator = '\n'
 			else:
 				separator = ' '
@@ -2736,7 +2735,7 @@ def main():
 	global debugLog, debugMode
 
 	# current version
-	versionumero = '1.4.7'
+	versionumero = '1.4.62'
 
 	# default
 	start = False
