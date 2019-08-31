@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+#!/usr/bin/python3
 import os, io, sys, time, ssl, random, datetime, calendar, logging, re, atexit
 import telepot, gtts, urllib.request, holidays, multiprocessing, pytz, sqlite3
 from matplotlib import pyplot as plt
