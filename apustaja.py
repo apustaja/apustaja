@@ -1229,6 +1229,8 @@ def chainGeneration(chat, seed):
 
 			# now we have a baseword
 			baseWord = c.fetchall()[0][0]
+			if baseWord[-1] == '.':
+				return baseWord
 			successfulBaseWord = baseWord
 
 			# baseform of baseword
