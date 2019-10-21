@@ -21,7 +21,7 @@ Ensimmäistä kertaa ajettaessa ohjelma pyytää sekä Telegramin bot-API avaint
 
 OpenWeatherMapin API-avain ei ole pakollinen (laita avaimeksi vaikka `000` jos et aio käyttää komentoa), mutta tämäkin on ilmainen ja sen voit hankkia openweathermap.org osoitteesta.
 
-Kun olet saanut botin luotua, nappaa sen API-avain ja käynnistä botti komennolla `apustaja.py -start`.
+Kun olet saanut botin luotua, nappaa sen API-avain ja käynnistä botti komennolla `apustaja.py -start`. Jos ajat bottia nohupin avulla, voit käyttää `-debug` -asetusta nohup.out tiedoston turhan täyttymisen estämiseksi. 
 
 ---
 
