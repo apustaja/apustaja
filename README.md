@@ -95,10 +95,10 @@ Muodosta sanapilvi ryhmään lähetetyistä viesteistä. Käyttää samaa tietok
 
 **`/tuet`**
 
-Milloin opintotuki tulee? Ei toistaiseksi kerro asumistuen saapumispäivää.
+Milloin opintotuki tulee? Ei toistaiseksi kerro asumistuen saapumispäivää, eli kesäisin seuraava saapuva tuki on syyskuun opintotuki.
 
 --
 
 **`/roll`**
 
-Gettaa tuplat. Lisäargumentteina on myös /roll [kolikko] ja /roll [noppa].
+Gettaa tuplat. Lisäargumentteina on myös /roll [kolikko] ja /roll [noppa], defaulttina /roll [ylis].
