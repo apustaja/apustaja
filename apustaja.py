@@ -1,27 +1,28 @@
 # -*- coding: utf-8 -*-
-import os, io, sys, time, ssl, random, datetime, calendar, logging, re, atexit
+# /usr/bin/python3
+
+import os, io, sys, time, ssl, random, datetime, logging, re, atexit, math, requests
 import telepot, gtts, urllib.request, holidays, multiprocessing, pytz, sqlite3
+
+from multiprocessing import Pool
+from urllib.request import urlopen
+from urllib.parse import quote
+from datetime import date
+
 from matplotlib import pyplot as plt
 from wordcloud import WordCloud
-from sqlite3 import OperationalError
 from mtranslate import translate
 from pydub import AudioSegment
 from gtts import gTTS
-from datetime import date
 from uptime import uptime
-from urllib.request import urlopen
-from urllib.parse import quote
 from bs4 import BeautifulSoup
 from telepot.loop import MessageLoop
-from multiprocessing import Pool, Process
 
-try: # get some speedup for json decoding with ujson
-	import ujson as json
-except ImportError:
-	import json
+try: import ujson as json
+except ImportError: import json
 
 def exitHandler():
-	if debugLog is True:
+	if debugLog:
 		logging.info('😴 Program closing')
 
 
@@ -29,32 +30,30 @@ def handle(msg):
 	try:
 		content_type, chat_type, chat = telepot.glance(msg, flavor="chat")
 	except KeyError:
-		if debugLog is True:
+		if debugLog:
 			# why is this here?
 			logging.info(f'Failure in glance: {msg}')
 		return
 
-	chatDir = f'data/chats/{chat}'
-	timestamp = time.time()
-	today = datetime.datetime.today()
+	chatDir = os.path.join('data/chats', str(chat))
 
 	# group upgraded to a supergroup; migrate data
 	if 'migrate_to_chat_id' in msg:
 		oldID = chat
 		newID = msg['migrate_to_chat_id']
 
-		if debugLog is True:
-			logging.info(f'⚠️ Group {oldID} migrated to {newID}; starting data migration.')
+		if debugLog:
+			logging.info(f'⚠️ Group {oldID} migrated to {newID} - starting data migration...')
 
 		# do the migration simply by renaming the chat's directory
-		oldChatDir = 'data/chats/' + str(oldID)
-		newChatDir = 'data/chats/' + str(newID)
+		oldChatDir = os.path.join('data/chats', str(oldID))
+		newChatDir = os.path.join('data/chats', str(newID))
 		os.rename(oldChatDir, newChatDir)
 
 		# migrate chat stats to new chat
 		migrateStats(oldID, newID)
 
-		if debugLog is True:
+		if debugLog:
 			logging.info('✅ Chat data migration complete!')
 
 	# bot removed from chat; delete all chat data permanently
@@ -74,8 +73,8 @@ def handle(msg):
 		except FileNotFoundError:
 			pass
 
-		if debugLog is True:
-			logging.info(f'⚠️ Bot removed from chat {chat}; data purged.')
+		if debugLog:
+			logging.info(f'⚠️ Bot removed from chat {chat} - data purged.')
 
 	# detect if bot added to a new chat
 	if 'new_chat_members' in msg or 'group_chat_created' in msg:
@@ -92,7 +91,7 @@ def handle(msg):
 				else:
 					return
 		elif 'group_chat_created' in msg:
-			if msg['group_chat_created'] is True:
+			if msg['group_chat_created']:
 				pass
 			else:
 				return
@@ -112,10 +111,10 @@ def handle(msg):
 		cmdSett = f'*/settings:* Muuta Apustajan ryhmäkohtaisia asetuksia `[admineille]`\n\n'
 		gitInfo = f'🤙 *Hostaa itse, forkkaa tai ihmettele spagettikoodia!*\nhttps://github.com/apustaja/apustaja'
 
-		replymsg = header+mid+cmdMarkov+cmdUM+cmdSaa+cmdRoll+cmdReplace+cmdTts+cmdCloud+cmdInfo+cmdSett+gitInfo
-		bot.sendMessage(chat, replymsg, parse_mode='Markdown')
+		reply_msg = header+mid+cmdMarkov+cmdUM+cmdSaa+cmdRoll+cmdReplace+cmdTts+cmdCloud+cmdInfo+cmdSett+gitInfo
+		bot.sendMessage(chat, reply_msg, parse_mode='Markdown')
 
-		if debugLog is True:
+		if debugLog:
 			logging.info('🌟 Bot added to a new chat!')
 
 		# create the folders for the chat
@@ -145,7 +144,7 @@ def handle(msg):
 			# command we saw
 			command = commandSplit[0].lower()
 			
-			# store statistics if command is valid (also ignores /info)
+			# store statistics if command is valid (ignores /info)
 			if command != validCommands[2] and command != validCommandsAlt[2]:
 				updateStats(msg, 'command')
 
@@ -169,8 +168,8 @@ def handle(msg):
 			elif command == validCommands[2] or command == validCommandsAlt[2]:
 				if timerHandle(msg,command):
 					bot.sendChatAction(chat, action='typing')
-					replymsg = info(msg)
-					bot.sendMessage(msg['chat']['id'], replymsg, parse_mode="Markdown")
+					reply_msg = info(msg)
+					bot.sendMessage(msg['chat']['id'], reply_msg, parse_mode="Markdown")
 
 				return
 
@@ -200,7 +199,7 @@ def handle(msg):
 					commandSplit = msg['text'].lower().strip().split(" ")
 
 					# reply to a message, with only /um and no extra arguments; reply to replied message
-					if 'reply_to_message' in msg and len(commandSplit) is 1:
+					if 'reply_to_message' in msg and len(commandSplit) == 1:
 						bot.sendMessage(chat, respstr, reply_to_message_id=msg['reply_to_message']['message_id'])
 					
 					# reply to a message, but there are extra arguments; reply to sender
@@ -233,12 +232,12 @@ def handle(msg):
 						# no text; check if it was a reply to a message
 						if 'reply_to_message' in msg:
 							if 'text' in msg['reply_to_message']:
-								if len(msg['reply_to_message']['text']) is not 0:
+								if len(msg['reply_to_message']['text']) != 0:
 									bot.sendChatAction(chat, action='record_audio')
 									tts(msg,'reply')
 
 							elif 'caption' in msg['reply_to_message']:
-								if len(msg['reply_to_message']['caption']) is not 0:
+								if len(msg['reply_to_message']['caption']) != 0:
 									bot.sendChatAction(chat, action='record_audio')
 									
 									# modify message's content
@@ -280,13 +279,14 @@ def handle(msg):
 				cmdRoll = f'*/roll:* Heitä kolikkoa, gettaa tuplat tai pyöritä noppaa\n'
 				cmdReplace = f'*/s:* Korvaa jonkun muun viestissä tekstiä toisella tekstillä\n'
 				cmdTts = f'*/tts:* Muuta tekstiä ääneksi esimerkiksi vastaamalla viestiin tai ajamalla `[/tts /markov]`\n'
+				cmdFp = f'*/fingerpori:* Päivän fingerpori!\n'
 				cmdCloud = f'*/wordcloud:* Muodosta sanapilvi ryhmän sanoista\n'
 				cmdInfo = f'*/info:* Tilastoja, faktoja ja analyysejä.\n'
 				cmdSett = f'*/settings:* Muuta Apustajan ryhmäkohtaisia asetuksia `[admineille]`\n\n'
 				gitInfo = f'🤙 *Hostaa itse, forkkaa tai ihmettele spagettikoodia!*\nhttps://github.com/apustaja/apustaja'
 
-				replymsg = header+mid+cmdMarkov+cmdUM+cmdSaa+cmdRoll+cmdReplace+cmdTts+cmdCloud+cmdInfo+cmdSett+gitInfo
-				bot.sendMessage(chat, replymsg, parse_mode='Markdown')
+				reply_msg = header+mid+cmdMarkov+cmdUM+cmdSaa+cmdRoll+cmdReplace+cmdTts+cmdFp+cmdCloud+cmdInfo+cmdSett+gitInfo
+				bot.sendMessage(chat, reply_msg, parse_mode='Markdown')
 
 				return
 
@@ -295,6 +295,22 @@ def handle(msg):
 				if timerHandle(msg,command):
 					bot.sendChatAction(chat, action='upload_photo')
 					wordCloud(msg)
+
+				return
+
+			# /fingerpori
+			elif command == validCommands[13] or command == validCommandsAlt[13]:
+				if timerHandle(msg,command):
+					bot.sendChatAction(chat, action='upload_photo')
+					fingerpori(chat)
+
+				return
+
+			# /launch
+			elif command == validCommands[14] or command == validCommandsAlt[14]:
+				if timerHandle(msg,command):
+					bot.sendChatAction(chat, action='typing')
+					launch(msg)
 
 				return
 
@@ -342,13 +358,12 @@ def anonymizeStats(chat):
 	queryReturn = statsCursor.fetchall()[0]
 	msgCount = queryReturn[1]
 	cmdCount = queryReturn[2]
-	newID = 0
 	
 	try: # insert the pulled stats into the 0 chatID group
-		statsCursor.execute("INSERT INTO stats (chatID, msgCount, cmdCount) VALUES (?, ?, ?)", (newID, msgCount, cmdCount))
+		statsCursor.execute("INSERT INTO stats (chatID, msgCount, cmdCount) VALUES (0, ?, ?)", (msgCount, cmdCount))
 	except:
-		statsCursor.execute("UPDATE stats SET msgCount = msgCount + ? WHERE chatID = ?", (msgCount, newID))
-		statsCursor.execute("UPDATE stats SET cmdCount = cmdCount + ? WHERE chatID = ?", (cmdCount, newID))
+		statsCursor.execute("UPDATE stats SET msgCount = msgCount + ? WHERE chatID = 0", (msgCount,))
+		statsCursor.execute("UPDATE stats SET cmdCount = cmdCount + ? WHERE chatID = 0", (cmdCount,))
 
 	try: # delete the stats for the chat
 		statsCursor.execute("DELETE FROM stats WHERE chatID = ?", (chat,))
@@ -392,7 +407,7 @@ def updateStats(msg, type):
 
 def settings(msg):
 	content_type, chat_type, chat = telepot.glance(msg, flavor="chat")
-	chatDir = f'data/chats/{chat}'
+	chatDir = os.path.join('data/chats', str(chat))
 	settingsPath = os.path.join(chatDir,'settings.json')
 
 	# check if caller is an admin
@@ -424,18 +439,18 @@ def settings(msg):
 			settingMap['saa'] = {}
 			settingMap['saa']['defaultCity'] = 'Otaniemi'
 
-			json.dump(settingMap, jsonData, indent=4, sort_keys=True)
+			json.dump(settingMap, jsonData, indent=4)
 
 	# parse message
 	commandSplit = msg['text'].lower().strip().split(" ") # [0] is the command itself
 
 	# only /settings called; send a help message
-	if len(commandSplit) is 1:
+	if len(commandSplit) == 1:
 		header = '🔧 *Apustajan ryhmä- ja komentokohtaiset asetukset*\n'
 		mid = '*Huom:* komennon kutsujan tulee olla ryhmän admin tai perustaja.'
 		low = '*Lisäargumentit:* timer, status, saa, tts\n'
-		replymsg = header + low + mid
-		bot.sendMessage(chat,replymsg,parse_mode="Markdown")
+		reply_msg = header + low + mid
+		bot.sendMessage(chat,reply_msg,parse_mode="Markdown")
 		return
 
 	# there are some actual arguments
@@ -446,7 +461,7 @@ def settings(msg):
 		if arg1 in validArg1:
 			# timer
 			if validArg1[0] == arg1:
-				if len(commandSplit) is 4:
+				if len(commandSplit) == 4:
 					command = '/' + commandSplit[2]
 					if command in validCommands and commandSplit[2] != 'settings':
 						timerCommand = commandSplit[2]
@@ -459,7 +474,7 @@ def settings(msg):
 							float(timer)
 							with open(settingsPath, 'w') as jsonData:
 								settingMap['commandTimers'][timerCommand] = timer # store as string
-								json.dump(settingMap, jsonData, indent=4, sort_keys=True)
+								json.dump(settingMap, jsonData, indent=4)
 								bot.sendMessage(chat,'✅ Asetus päivitetty onnistuneesti!',reply_to_message_id=msg['message_id'])
 						
 						except ValueError:
@@ -472,8 +487,8 @@ def settings(msg):
 					top = '*Rajoita tai estä komennon kutsuminen*\n'
 					header = '*Argumentit:* timer _(rajoitettava komento) (aika sekunteina)_\n'
 					mid = '*Esim:* /settings timer markov 60 (-1 estää komennon)'
-					replymsg = top + header + mid
-					bot.sendMessage(chat, replymsg, parse_mode="Markdown")
+					reply_msg = top + header + mid
+					bot.sendMessage(chat, reply_msg, parse_mode="Markdown")
 			
 			# status			
 			elif validArg1[1] == arg1:
@@ -488,13 +503,13 @@ def settings(msg):
 							if float(value) < 0:
 								ajastimet = ajastimet + '*{:s}* komento ei käytössä\n'.format(key)
 							elif float(value) >= 0:
-								if value is 1:
+								if value == 1:
 									ajastimet = ajastimet + '*{:s}* {:s} sekunti\n'.format(key,str(value))
 								else:
 									ajastimet = ajastimet + '*{:s}* {:s} sekuntia\n'.format(key,str(value))
 
-					replyMsg = header + header1 + ajastimet
-					bot.sendMessage(chat, replyMsg, parse_mode='Markdown')
+					reply_msg = header + header1 + ajastimet
+					bot.sendMessage(chat, reply_msg, parse_mode='Markdown')
 
 				except FileNotFoundError:
 					if not os.path.isdir(chatDir):
@@ -509,7 +524,7 @@ def settings(msg):
 							command = command.replace('/','')
 							settingMap['commandTimers'][command] = 0.75
 						
-						json.dump(settingMap, jsonData, indent=4, sort_keys=True)
+						json.dump(settingMap, jsonData, indent=4)
 						settings(msg) # call messages again to print the values now that the file exists
 						return
 
@@ -536,19 +551,19 @@ def settings(msg):
 						try:
 							settingMap['saa']['defaultCity'] = newDefault
 							with open(settingsPath, 'w') as jsonData:
-								json.dump(settingMap, jsonData, indent=4, sort_keys=True)
+								json.dump(settingMap, jsonData, indent=4)
 						
 						except KeyError:
 							settingMap['saa'] = {}
 							settingMap['saa']['defaultCity'] = newDefault
 
 							with open(settingsPath, 'w') as jsonData:
-								json.dump(settingMap, jsonData, indent=4, sort_keys=True)
+								json.dump(settingMap, jsonData, indent=4)
 
 						bot.sendMessage(chat, '✅ Oletuskaupunki päivitetty onnistuneesti!')
 
 				else:
-					bot.sendMessage(chat, '🌤 Käyttö: /settings saa defaultCity KAPUNGIN NIMI\nEsimerkki: /settings saa defaultCity New York')
+					bot.sendMessage(chat, '🌤 Käyttö: /settings saa defaultCity [kaupungin nimi]\nEsimerkki: /settings saa defaultCity New York')
 
 			# /tts
 			elif validArg1[3] == arg1:
@@ -580,19 +595,19 @@ def settings(msg):
 							try:
 								settingMap['tts']['defaultLanguage'] = defaultLanguage
 								with open(settingsPath, 'w') as jsonData:
-									json.dump(settingMap, jsonData, indent=4, sort_keys=True)
+									json.dump(settingMap, jsonData, indent=4)
 							
 							except KeyError:
 								settingMap['tts'] = {}
 								settingMap['tts']['defaultLanguage'] = defaultLanguage
 
 								with open(settingsPath, 'w') as jsonData:
-									json.dump(settingMap, jsonData, indent=4, sort_keys=True)
+									json.dump(settingMap, jsonData, indent=4)
 
 							bot.sendMessage(chat, '✅ Oletuskieli päivitetty onnistuneesti!')
 
 				else:
-					bot.sendMessage(chat, '🌤 Käyttö: /settings tts defaultLanguage KIELI\nEsimerkki: /settings tts defaultLanguage English')
+					bot.sendMessage(chat, '🎙 Käyttö: /settings tts defaultLanguage [kieli]\nEsimerkki: /settings tts defaultLanguage English')
 
 
 			else:
@@ -603,18 +618,17 @@ def settings(msg):
 
 def unescapematch(matchobj):
 	# cleans up Unicode dark magic from strings before parsing them
-	# credit: StackOverflow
 	escapesequence = matchobj.group(0)
 	digits = escapesequence[2:]
 	ordinal = int(digits, 16)
-	char = unichr(ordinal)
+	char = chr(ordinal)
 	
 	return char
 
 
 def timerHandle(msg,command):
 	content_type, chat_type, chat = telepot.glance(msg, flavor="chat")
-	chatDir = f'data/chats/{chat}'
+	chatDir = os.path.join('data/chats', str(chat))
 
 	# remove the '/' command prefix
 	command = command.strip('/')
@@ -641,9 +655,9 @@ def timerHandle(msg,command):
 			settingMap['commandTimers'] = {}
 			for command in validCommands:
 				command = command.replace('/','')
-				settingMap['commandTimers'][command] = 1.0
+				settingMap['commandTimers'][command] = '1.0'
 			
-			json.dump(settingMap, jsonData, indent=4, sort_keys=True)
+			json.dump(settingMap, jsonData, indent=4)
 
 	# load settings
 	with open(settingsPath, 'r') as jsonData:
@@ -656,7 +670,7 @@ def timerHandle(msg,command):
 	except KeyError:
 		with open(settingsPath, 'w') as jsonData:
 			settingMap['commandTimers'][command] = '2'
-			json.dump(settingMap, jsonData, indent=4, sort_keys=True)
+			json.dump(settingMap, jsonData, indent=4)
 
 		timer = float(settingMap['commandTimers'][command])
 
@@ -671,7 +685,7 @@ def timerHandle(msg,command):
 		with open(lastPath, 'w') as jsonData:
 			lastMap = {}
 			lastMap[command] = '0'
-			json.dump(lastMap, jsonData, indent=4, sort_keys=True)
+			json.dump(lastMap, jsonData, indent=4)
 
 	with open(lastPath) as jsonData:
 		lastMap = json.load(jsonData)
@@ -682,10 +696,10 @@ def timerHandle(msg,command):
 		lastMap[command] = '0'
 		last_called = lastMap[command]
 
-	if last_called is '0': # never called; store now
+	if last_called == '0': # never called; store now
 		lastMap[command] = str(now_called) # stringify datetime object, store
 		with open(lastPath, 'w') as jsonData:
-			json.dump(lastMap, jsonData, indent=4, sort_keys=True)
+			json.dump(lastMap, jsonData, indent=4)
 	
 	else:
 		last_called = datetime.datetime.strptime(last_called, "%Y-%m-%d %H:%M:%S.%f") # unstring datetime object
@@ -694,7 +708,7 @@ def timerHandle(msg,command):
 		if time_since.seconds > timer:
 			lastMap[command] = str(now_called) # stringify datetime object, store
 			with open(lastPath, 'w') as jsonData:
-				json.dump(lastMap, jsonData, indent=4, sort_keys=True)
+				json.dump(lastMap, jsonData, indent=4)
 		else:
 			return False
 
@@ -703,7 +717,7 @@ def timerHandle(msg,command):
 
 def createDatabase(msg):
 	content_type, chat_type, chat = telepot.glance(msg, flavor='chat')
-	chatDir = f'data/chats/{chat}'
+	chatDir = os.path.join('data/chats', str(chat))
 
 	if os.path.isfile(os.path.join(chatDir,'chainStore.db')):
 		os.remove(os.path.join(chatDir,'chainStore.db'))
@@ -712,7 +726,7 @@ def createDatabase(msg):
 	if not os.path.isdir(chatDir):
 		os.mkdir(chatDir)
 
-		if debugLog is True:
+		if debugLog:
 			logging.info('🌟 New chat detected!')
 
 	# Establish connection
@@ -778,7 +792,7 @@ def parseMessage(msg):
 			n += 1
 
 		# this was here :^)
-		elif len(sentence) is 1:
+		elif len(sentence) == 1:
 			# nothing :^(
 			after = ''
 
@@ -799,7 +813,7 @@ def parseMessage(msg):
 
 def updateDatabase(chainStore, msg): 
 	content_type, chat_type, chat = telepot.glance(msg, flavor='chat')
-	chatDir = f'data/chats/{chat}'
+	chatDir = os.path.join('data/chats', str(chat))
 
 	# create the folders for the chat if they don't exist (they should, though)
 	if not os.path.isdir(chatDir):
@@ -831,9 +845,287 @@ def updateDatabase(chainStore, msg):
 	return
 
 
+def launch(msg):
+	# construct url from params
+	def construct_params(PARAMS):
+		param_url, i = '', 0
+		if PARAMS is not None:
+			for key, val in PARAMS.items():
+				if i == 0:
+					param_url += f'?{key}={val}'
+				else:
+					param_url += f'&{key}={val}'
+				i += 1
+
+		return param_url
+
+	# parse a json containing multiple launches
+	def multi_parse(json, launch_count):
+		resp_str = ''
+		for i in range(0, launch_count):
+			# extract the useful data for the bot
+			launch_json = API_RESPONSE.json()['launches'][i]
+			vehicle_name = launch_json['name'].split('|')[0]
+			launch_name = launch_json['name'].split('|')[1]
+			launch_net = launch_json['net']
+
+			try:
+				if 'vidURLs' in launch_json:
+					urls = launch_json['vidURLs']
+					announce_url = None
+					for url in urls:
+						if 'youtube' in url:
+							announce_url = url
+					if announce_url is None:
+						announce_url = urls[0]
+			except:
+				announce_url = None
+
+			if announce_url is not None:
+				live_str = f'📺 *Watch live* {announce_url}'
+
+			launch_date = launch_net.split(', ')[0]
+			launch_year = launch_net.split(', ')[1].split(' ')[0]
+
+			if launch_json['netstamp'] != 0:
+				net_stamp = datetime.datetime.fromtimestamp(launch_json['netstamp'])
+				eta = abs(datetime.datetime.today() - net_stamp)
+
+				today_unix = time.mktime(datetime.datetime.today().timetuple())
+				net_unix = launch_json['netstamp']
+				if today_unix <= net_unix:
+					t_str = '*T-*'
+				else:
+					t_str = '*T+*'
+					if announce_url is not None:
+						live_str = f'🚀 *Launch in progress* {announce_url}'
+
+				if eta.days >= 365: # over 1 year
+					t_y = math.floor(eta.days/365)
+					t_m = math.floor(eta.months)
+					
+					if t_y == 1:
+						eta_str = f'⏰ {t_str} {t_y} year, {t_m} months'
+					else:
+						eta_str = f'⏰ {t_str} {t_y} years, {t_m} months'
+
+				elif eta.days < 365 and eta.days >= 31: # over 1 month
+					t_m = eta.months
+					t_d = eta.days
+
+					if t_m == 1:
+						eta_str = f'⏰ {t_str} {t_m} month, {t_d} days'
+					else:
+						eta_str = f'⏰ {t_str} {t_m} months, {t_d} days'
+
+				elif eta.days >= 1 and eta.days < 31: # over a day
+					t_d = eta.days
+
+					if t_d <= 2:
+						t_h = math.floor(eta.seconds/3600)
+						if t_d == 1:
+							t_d_str = f'{t_d} day'
+						else:
+							t_d_str = f'{t_d} days'
+
+						if t_h == 1:
+							eta_str = f'⏰ {t_str} {t_d_str}, {t_h} hour'
+						else:
+							eta_str = f'⏰ {t_str} {t_d_str}, {t_h} hours'
+					else:
+						eta_str = f'⏰ {t_str} {t_d} days'
+
+				elif (eta.seconds/3600) < 24 and (eta.seconds/3600) >= 1: # under a day, more than an hour
+					t_h = math.floor(eta.seconds/3600)
+					t_m = math.floor((eta.seconds-t_h*3600)/60)
+
+					if t_h == 1:
+						eta_str = f'⏰ {t_str} {t_h} hour, {t_m} minutes'
+					else:
+						eta_str = f'⏰ {t_str} {t_h} hours, {t_m} minutes'
+				
+				elif (eta.seconds/3600) < 1:
+					t_m = math.floor(eta.seconds/60)
+					t_s = math.floor(eta.seconds-t_m*60)
+
+					if t_m == 1:
+						eta_str = f'⏰ {t_str} {t_m} minute, {t_s} seconds'
+					else:
+						eta_str = f'⏰ {t_str} {t_m} minutes, {t_s} seconds'
+
+			else:
+				eta = None
+
+			location_name = launch_json['location']['pads'][0]['name']
+			if 'Unknown Pad' not in location_name:
+				pad_name = location_name.split(', ')[0]
+			else:
+				pad_name = launch_json['location']['name']
+
+			try:
+				if launch_json['missions'][0]['description'] != '':
+					mission_text = launch_json['missions'][0]['description']
+				else:
+					mission_text = None
+			except:
+				mission_text = None
+
+			# prints
+			temp_str = f'*🛰 {launch_name}*\n*Vehicle* {vehicle_name}\n*Pad* {pad_name}\n*NET* {launch_date}, {launch_year}'
+
+			if eta is not None:
+				temp_str += f'\n\n{eta_str}'
+
+			if announce_url is not None:
+				temp_str += f'\n{live_str}'
+
+			if mission_text is not None:
+				temp_str += f'\n\nℹ️ {mission_text}'
+
+			resp_str += temp_str
+			if i != launch_count - 1:
+				resp_str += '\n\n– – – – – – –\n\n'
+
+		return resp_str
+
+
+	content_type, chat_type, chat = telepot.glance(msg, flavor='chat')
+	commandSplit = msg['text'].strip().split(" ")
+	cmd = ' '.join(commandSplit[1:])
+
+	if cmd == ' ' or cmd == '':
+		cmd = None
+
+	now = datetime.datetime.now()
+	today_call = f'{now.year}-{now.month}-{now.day}'
+
+	fields = f'fields=name,net,location,rocket,missions,netstamp,vidURLs,hashtag'
+
+	call_count = 1
+	if cmd is not None:
+		request = cmd.strip().lower().split(' ')
+		if 'notify' not in request[0]:
+			request_strify = ' '.join(request[0:])
+			if ',' in request_strify:
+				request_str = ' '.join(request[0:])
+				call_str = request_str.split(',')[0]
+				call_count = request_str.split(',')[1]
+				
+				# check if user input is valid and in a modest range
+				try:
+					float(call_count)
+					if int(call_count) > 5:
+						call_count = 3
+					elif int(call_count) <= 1:
+						call_count = 1
+				except:
+					call_count = 1
+
+				call_url = '%20'.join(call_str.split(' '))
+			else:
+				call_url = '%20'.join(request[0:])
+		else:
+			bot.sendMessage(chat, f'🚧 Feature not supported yet 🚧')
+			return
+	else:
+		request = None
+
+	if request is None:
+		API_REQUEST = 'launch/next/3'
+		PARAMS = {'startdate': today_call}
+
+	elif 'notify' in request[0]:
+		pass
+
+	else:
+		API_REQUEST = f'launch'
+		#if 'rocket' in request[0]:
+		PARAMS = {'name': call_url, 'limit': call_count, 'startdate': today_call}
+		#elif 'provider' in request[0]:
+		#	if 'spacex' in call_url or 'space x' in call_url:
+		#		call_url = 'spx'
+		#	PARAMS = {'lsp': call_url, 'limit': 1, 'startdate': today_call}
+		#else:
+		#	if 'spacex' in call_url:
+		#		call_url.replace('spacex', 'spx')
+		#	elif 'space x' in call_url:
+		#		call_url.replace('space x', 'spx')
+
+		#	PARAMS = {'name': call_url, 'limit': 1, 'startdate': today_call}
+
+	param_url = construct_params(PARAMS)
+
+	# API call
+	API_URL = 'https://launchlibrary.net'
+	API_VERSION = '1.4'
+	API_CALL = f'{API_URL}/{API_VERSION}/{API_REQUEST}{param_url}&{fields}'
+	
+	# perform the call
+	headers = {'user-agent': 'telegram-launch/0.1'}
+	API_RESPONSE = requests.get(API_CALL, headers=headers)
+
+	with open('launch-json.json', 'w') as file:
+		json.dump(API_RESPONSE.json(), file, indent=4)
+
+	if len(API_RESPONSE.json()['launches']) == 0:
+		if API_RESPONSE.status_code == 404:
+			call_url = '%20'.join(request[0:])
+			PARAMS = {'lsp': call_url, 'limit': 1, 'startdate': today_call}
+			param_url = construct_params(PARAMS)
+			API_CALL = f'{API_URL}/{API_VERSION}/{API_REQUEST}{param_url}&{fields}'
+
+			API_RESPONSE = requests.get(API_CALL, headers=headers)
+			if API_RESPONSE.status_code == 404:
+				bot.sendMessage(chat, '⚠️ No launches found!')
+				return
+			else:
+				pass
+		else:
+			bot.sendMessage(chat, f'⚠️ Failed request with status code {API_RESPONSE.status_code}')
+			return
+	
+	elif len(API_RESPONSE.json()['launches']) >= 1:
+		# parse the json we got
+		resp_str = multi_parse(API_RESPONSE.json(), len(API_RESPONSE.json()['launches']))
+
+	# if we have an image, send that as well
+	launch_json = API_RESPONSE.json()['launches'][0]
+
+	with open(os.path.join('data', 'launch_cache', 'launch_json.json'), 'w') as json_store:
+		json.dump(launch_json, json_store, indent=4)
+
+	if 'placeholder' not in launch_json['rocket']['imageURL']:
+		img_url = launch_json['rocket']['imageURL']
+		img_name = img_url.split('RocketImages')[1].replace('/','').replace('+','_')
+
+		if not os.path.isdir(os.path.join('data', 'launch_cache')):
+			os.mkdir(os.path.join('data', 'launch_cache'))
+
+		if not os.path.isfile(os.path.join('data', 'launch_cache', img_name)):
+			try:
+				urllib.request.urlretrieve(
+					img_url,
+					os.path.join('data', 'launch_cache', img_name)
+					)
+			except:
+				bot.sendMessage(chat, resp_str, parse_mode="Markdown")
+				return
+
+		with open(os.path.join('data', 'launch_cache', img_name), 'rb') as image:
+			try:
+				bot.sendPhoto(chat_id=chat, photo=image, caption=resp_str, parse_mode="Markdown")
+			except telepot.exception.TelegramError:
+				bot.sendMessage(chat, resp_str, parse_mode="Markdown")
+			return
+
+	bot.sendMessage(chat, resp_str, parse_mode="Markdown")
+	return
+
+
+
 def tts(msg,kind):
 	content_type, chat_type, chat = telepot.glance(msg, flavor="chat")
-	chatDir = f'data/chats/{chat}'
+	chatDir = os.path.join('data/chats', str(chat))
 
 	if kind == 'text':
 		commandSplit = msg['text'].lower().strip().split(" ")
@@ -842,16 +1134,16 @@ def tts(msg,kind):
 		else:
 			ttsify = msg['text'].replace('/tts ', '')
 
-		if commandSplit[1] == '/markov' and len(commandSplit) is 2:
+		if commandSplit[1] == '/markov' and len(commandSplit) == 2:
 			msgNew = msg
 			msgNew['text'] = msgNew['text'].replace('/markov','')
-			ttsify = chainGeneration(msg['chat']['id'], 0, 'chat', msgNew)
+			ttsify = chainGeneration(msg['chat']['id'], msgNew)
 
 		# manipulate message content to remove '/markov'
 		elif commandSplit[1] == '/markov' and len(commandSplit) > 2:
 			msgNew = msg
 			msgNew['text'] = msgNew['text'].replace('/markov','')
-			ttsify = chainGeneration(msg['chat']['id'], 0, 'chat', msgNew)
+			ttsify = chainGeneration(msg['chat']['id'], msgNew)
 
 	elif kind == 'reply':
 		ttsify = msg['reply_to_message']['text']
@@ -869,7 +1161,7 @@ def tts(msg,kind):
 			defaultLanguage = 'fi'
 
 			with open("data/chats/" + str(chat) +  "/settings.json", 'w') as jsonData:
-				json.dump(settingMap, jsonData, indent=4, sort_keys=True)
+				json.dump(settingMap, jsonData, indent=4)
 
 	tts = gTTS(ttsify, lang=defaultLanguage)
 	mp3Path, oggPath = os.path.join(chatDir, 'tts.mp3'), os.path.join(chatDir, 'tts.ogg')
@@ -877,7 +1169,7 @@ def tts(msg,kind):
 	with open(mp3Path, 'wb') as ttsFile:
 		tts.write_to_fp(ttsFile)
 
-	oggVoice = AudioSegment.from_file(mp3Path, format='mp3').export(oggPath, format='ogg', codec='libopus')
+	AudioSegment.from_file(mp3Path, format='mp3').export(oggPath, format='ogg', codec='libopus')
 	
 	if kind == 'text':
 		with open(oggPath, 'rb') as ttsSend:
@@ -893,7 +1185,7 @@ def tts(msg,kind):
 
 def wordCloud(msg):
 	content_type, chat_type, chat = telepot.glance(msg, flavor='chat')
-	chatDir = f'data/chats/{chat}'
+	chatDir = os.path.join('data/chats', str(chat))
 	
 	# establish connection to the chainStore
 	conn = sqlite3.connect(os.path.join(chatDir,'chainStore.db'))
@@ -917,10 +1209,11 @@ def wordCloud(msg):
 		'vain', 'joko', 'ovat', 'joka'
 	]
 
-	# build the frequency dictionary
+	# build the frequency dictionary ( c l e a n c o d e )
 	freqDict = {}
 	for row in queryReturn:
 		w1, cnt, w1bf = row[0].lower(), row[1], row[2]
+
 		if w1 not in ignoreWords and w1bf not in ignoreWords:
 			if w1 not in freqDict:
 				freqDict[w1] = cnt
@@ -928,17 +1221,24 @@ def wordCloud(msg):
 				freqDict[w1] += cnt
 
 	# define the wordcloud
-	cloud = WordCloud(
+	high_res_cloud = WordCloud(
 		background_color='white',
 		max_words=300, margin=10,
 		width=1000, height=500,
 		random_state=random.randint(0,314159)
 		)
 
-	cloud = cloud.generate_from_frequencies(freqDict)
+	low_res_cloud = WordCloud(
+		background_color='white',
+		max_words=300, margin=10,
+		width=1000, height=375,
+		random_state=random.randint(0,314159)
+		)
+
+	cloud = low_res_cloud.generate_from_frequencies(freqDict)
 
 	# generate image
-	plt.figure(figsize=(6,4), dpi=450)
+	plt.figure(figsize=(5,3), dpi=250) # figsize=(6,4), dpi=450
 	plt.imshow(cloud, interpolation='bilinear')
 	plt.axis('off')
 
@@ -958,82 +1258,46 @@ def wordCloud(msg):
 
 
 def markov(msg, commandSplit, chat):
-	chatDir = f'data/chats/{chat}'
-
-	# check if we were given a seed
-	if len(commandSplit) is 1: # if there's ONLY the command, just randomly pick a word
-		if 'reply_to_message' not in msg:
-			seedInput = False
-
-		else:
-			msgtext = msg['reply_to_message']['text']
-			if msgtext[0] == '/':
-				seedInput = False
-
-			else:
-				seedInput = True
-			
-				genmsg = ''
-				msgSplit = msgtext.split(' ')
-				seed = msgSplit[-1]
-
-				for i in range(0, len(msgSplit) - 1):
-					genmsg += msgSplit[i]
-
-					if i == 0:
-						if genmsg[0].isalpha():
-							genmsg = genmsg.capitalize()
-						else:
-							pass
-					
-					if i is not len(msgSplit) - 2:
-						genmsg += ' '
-	
-	else:
-		seedInput = True
-		genmsg = ''
-		n = 0
-
-		startIndex = 1
-		for n in range(startIndex, len(commandSplit) - 1):
-			genmsg += commandSplit[n]
-
-			if n == startIndex:
-				if genmsg[0].isalpha():
-					genmsg = genmsg.capitalize()
-				else:
-					pass
-
-			if n is not len(commandSplit) - 2:
-				genmsg += ' '
-
-		seed = commandSplit[-1]
-
-
-	if seedInput is False:
+	# get seed from user input, if there is one
+	if len(commandSplit) == 1:
 		seed = False
+	else:
+		seed = commandSplit[-1]
+		genmsg, n = '', 0
+		for word in commandSplit:
+			if n != 0 and n != len(commandSplit) - 1:
+				if genmsg != '':
+					genmsg = genmsg + ' ' + word
+				else:
+					if word[0].isalpha():
+						genmsg = word.capitalize()
+					else:
+						genmsg = word
 
-	replymsg = chainGeneration(chat, seed)
+			n += 1
 
-	if seedInput is not False:
-		replymsg = genmsg + ' ' + replymsg
+	# generate a chain
+	reply_msg = chainGeneration(chat, seed)
+
+	if seed is not False:
+		reply_msg = genmsg + ' ' + reply_msg
 	
-	if replymsg is not None and len(replymsg) is not 0:
-		bot.sendMessage(chat, replymsg)
+	if reply_msg is not None and len(reply_msg) != 0:
+		bot.sendMessage(chat, reply_msg)
 
 	return
 
 
 def chainGeneration(chat, seed):
 	# chat directory
-	chatDir = f'data/chats/{chat}'
+	chatDir = os.path.join('data/chats', str(chat))
 
 	# Establish connection
 	conn = sqlite3.connect(os.path.join(chatDir,'chainStore.db'))
 	c = conn.cursor()
 
 	# We'd usually cut off the sentence at a period, but ignore if the word is listed here
-	ignorePeriod = ['esim.', 'vrt.', 'ns.', 'tri.', 'yms.', 'jne.', 'mm.', 'mr.', 'ms.', 'ts.', 'ym.', 'kys.']
+	ignorePeriod = ['esim.', 'vrt.', 'ns.', 'tri.', 'yms.', 'jne.', 'mm.', 'mr.', 'ms.', 'ts.', 'ym.', 'kys.', 'tms.']
 
 	# if seed isn't false, generate the first word according to the seed
 	seedGenSuccess = False
@@ -1043,13 +1307,13 @@ def chainGeneration(chat, seed):
 			c.execute("SELECT word2, count FROM pairs WHERE word1baseform = ? AND word1 = ?", (word1baseform, seed))
 		
 		except Exception as e:
-			if debugLog is True:
+			if debugLog:
 				logging.info(f'Exception in genmsg: {e}')
 			return
 
 		# check length of our query return; if 0, try all forms of the word. If not, continue into the regular loop.
 		queryReturn = c.fetchall()
-		if len(queryReturn) is 0:
+		if len(queryReturn) == 0:
 			# find all word1's with the same baseform
 			baseform = seed.replace(',','').replace('.','').replace('?','').replace('!','').replace('(','').replace(')','').replace('[','').replace(']','').replace('"','').replace('-','').replace('_','').lower()
 			c.execute("SELECT word1, word2, count FROM pairs WHERE word1baseform = ?", (baseform,))
@@ -1057,7 +1321,7 @@ def chainGeneration(chat, seed):
 			queryReturn = c.fetchall()
 
 			# Still nothing.
-			if len(queryReturn) is 0:
+			if len(queryReturn) == 0:
 				genmsg = seed
 				seedGenSuccess = False
 
@@ -1092,7 +1356,7 @@ def chainGeneration(chat, seed):
 						nextWord = key
 						break
 
-				if len(nextWord) is not 0:
+				if len(nextWord) != 0:
 					if nextWord[0] == '>':
 						separator = '\n'
 					else:
@@ -1116,7 +1380,7 @@ def chainGeneration(chat, seed):
 					elif nextWord[-1] == '?' or nextWord[-1] == '!':
 						return genmsg
 
-				except IndexError as e: # used to catch empty words and pass them silently
+				except IndexError: # used to catch empty words and pass them silently
 					pass
 
 		# queryReturn not empty for the seed word; do a pick and advance into the regular loop
@@ -1137,7 +1401,7 @@ def chainGeneration(chat, seed):
 					else:
 						paths[word2] = paths[word2] + float(count/countSum)
 
-			if len(paths) is not 0:
+			if len(paths) != 0:
 				maxSum = 0
 				for key, value in paths.items():
 					maxSum += value
@@ -1153,7 +1417,7 @@ def chainGeneration(chat, seed):
 						break
 					i += 1
 
-				if len(nextWord) is not 0:
+				if len(nextWord) != 0:
 					if nextWord[0] == '>':
 						separator = '\n'
 					else:
@@ -1176,7 +1440,7 @@ def chainGeneration(chat, seed):
 					elif nextWord[-1] == '?' or nextWord[-1] == '!':
 						return genmsg
 
-				except IndexError as e: # used to catch empty words and pass them silently
+				except IndexError: # used to catch empty words and pass them silently
 					pass
 			
 			else:
@@ -1197,7 +1461,7 @@ def chainGeneration(chat, seed):
 		c.execute("SELECT word1 FROM pairs LIMIT ?, 1", (rndIndex,))
 		baseWord = c.fetchall()[0][0]
 
-		if len(baseWord) is not 0:
+		if len(baseWord) != 0:
 			if baseWord[0] == '>':
 				separator = '\n'
 			else:
@@ -1230,7 +1494,7 @@ def chainGeneration(chat, seed):
 			# now we have a baseword
 			baseWord = c.fetchall()[0][0]
 			if baseWord[-1] == '.':
-				return baseWord.capitalize()
+				baseWord = baseWord.replace('.','')
 			successfulBaseWord = baseWord
 
 			# baseform of baseword
@@ -1240,12 +1504,12 @@ def chainGeneration(chat, seed):
 			c.execute("SELECT word2, count FROM pairs WHERE word1baseform = ? AND word1 = ?", (baseform, baseWord))
 
 			queryReturn = c.fetchall()
-			if len(queryReturn) is 0:
+			if len(queryReturn) == 0:
 				c.execute("SELECT word1, word2, count FROM pairs WHERE word1baseform = ?", (baseform,))
 				queryReturn = c.fetchall()
 
 				# Still nothing.
-				if len(queryReturn) is 0:
+				if len(queryReturn) == 0:
 					randomGenSuccess = False
 				else:
 					randomGenSuccess = True
@@ -1259,7 +1523,7 @@ def chainGeneration(chat, seed):
 					if word2 not in word2list:
 						word2list.append(word2)
 
-				if word2success is True:
+				if word2success:
 					randomGenSuccess = True
 					nextWord = random.choice(word2list)
 
@@ -1268,7 +1532,7 @@ def chainGeneration(chat, seed):
 				pass
 
 		baseWord = nextWord
-		if len(baseWord) is not 0:
+		if len(baseWord) != 0:
 			if baseWord[0] == '>':
 				separator = '\n'
 			else:
@@ -1281,7 +1545,10 @@ def chainGeneration(chat, seed):
 		else:
 			genmsg = successfulBaseWord + separator + nextWord
 
-		if nextWord[-1] == '.':
+		try:
+			if nextWord[-1] == '.':
+				return genmsg
+		except IndexError:
 			return genmsg
 
 	# now we're 100% certain we have a baseWord; start regular sentence generation
@@ -1296,7 +1563,7 @@ def chainGeneration(chat, seed):
 		queryReturn = c.fetchall()
 
 		# if we find nothing, try with baseform
-		if len(queryReturn) is 0:
+		if len(queryReturn) == 0:
 			# find all word1's with the same baseform
 			baseform = baseWord.replace(',','').replace('.','').replace('?','').replace('!','').replace('(','').replace(')','').replace('[','').replace(']','').replace('"','').replace('-','').replace('_','').lower()
 
@@ -1305,7 +1572,7 @@ def chainGeneration(chat, seed):
 			queryReturn = c.fetchall()
 
 			# Still nothing.
-			if len(queryReturn) is 0:
+			if len(queryReturn) == 0:
 				return genmsg
 
 			else: # found words with the same baseform
@@ -1338,7 +1605,7 @@ def chainGeneration(chat, seed):
 						nextWord = key
 						break
 
-				if len(nextWord) is not 0:
+				if len(nextWord) != 0:
 					if nextWord[0] == '>':
 						separator = '\n'
 					else:
@@ -1361,7 +1628,7 @@ def chainGeneration(chat, seed):
 					elif nextWord[-1] == '?' or nextWord[-1] == '!':
 						return genmsg
 
-				except IndexError as e: # used to catch empty words and pass them silently
+				except IndexError: # used to catch empty words and pass them silently
 					pass
 
 		else:
@@ -1393,7 +1660,7 @@ def chainGeneration(chat, seed):
 					nextWord = key
 					break
 
-			if len(nextWord) is not 0:
+			if len(nextWord) != 0:
 				if nextWord[0] == '>':
 					separator = '\n'
 				else:
@@ -1420,7 +1687,7 @@ def chainGeneration(chat, seed):
 				elif nextWord[-1] == '?' or nextWord[-1] == '!':
 					return genmsg
 
-			except IndexError as e: # used to catch empty words and pass them silently
+			except IndexError: # used to catch empty words and pass them silently
 				pass
 
 	conn.close()
@@ -1445,7 +1712,7 @@ def roll(msg):
 		bot.sendMessage(chat, repStr, parse_mode="Markdown")
 		return
 
-	# generate an 8-digit random number sequence
+	# generate an 8-digit random integer sequence
 	if rollArg == 'ylis':
 		randInt = str(random.randint(10000000,99999999))
 
@@ -1469,7 +1736,7 @@ def roll(msg):
 	# int between 0 and 1
 	elif rollArg == 'kolikko':
 		randInt = random.randint(0,1)
-		if randInt is 0:
+		if randInt == 0:
 			repStr = 'Kruuna'
 		else:
 			repStr = 'Klaava'
@@ -1519,7 +1786,7 @@ def um():
 	'Entten tentten teelikamentten, hissun kissun vaapula vissun, eelin keelin klot, viipula vaapula vot, Eskon saun piun paun. Nyt sää lähdet tästä pelistä pois, puh pah pelistä pois! Jäljelle jäi',
 	'Kiinnostuskiikareissani näkyy']
 
-	if randInt is 0:
+	if randInt == 0:
 		random.shuffle(responses)
 		respStr = responses[0] + " uhka."
 
@@ -1533,14 +1800,13 @@ def um():
 def tuet(msg):
 	# today
 	today = date.today()
-	todayWeekday = today.weekday()
 
 	# check if there has been a tukiDate this month
 	# there has already been one, if current date is greater than the first tukiDate this month
 	tukiDate1 = datetime.date(today.year, today.month, 1)
 	tukiDate1Weekday = tukiDate1.weekday()
 	if tukiDate1Weekday > 5:
-		tukiDate1 = date(tukiDate1.year, tukiDate1.month, tukiDate1.day+(7-tukiWeekday))
+		tukiDate1 = date(tukiDate1.year, tukiDate1.month, tukiDate1.day+(7-tukiDate1Weekday))
 
 	# perform check for a possible holiday
 	if date(tukiDate1.year,tukiDate1.month,tukiDate1.day) in holidays.FI():
@@ -1551,12 +1817,13 @@ def tuet(msg):
 	dateDelta = tukiDate1 - today
 	dayDelta = dateDelta.days
 
-	if dayDelta is 0 and tukiDate1.month not in range(6,9):
+	if dayDelta == 0 and tukiDate1.month not in range(6,9):
 		timeToTukiDate = 0
 		header = "🎉*Minä kun tuet tulee tänään🎉\n*"
 		mid = "https://www.youtube.com/watch?v=WQ9tcPSkfJU"
-		replymsg = header + mid
-		return replymsg
+		reply_msg = header + mid
+		bot.sendMessage(msg['chat']['id'], reply_msg, parse_mode="Markdown")
+		return
 
 	elif tukiDate1.month in range(6,9):
 		tukiDate2 = date(today.year, 9, 1)
@@ -1597,28 +1864,28 @@ def tuet(msg):
 		timeToTukiDate = abs(tukiDate2 - today)
 
 	tukiWeekday = tukiDate2.weekday()
-	if tukiWeekday is 0:
+	if tukiWeekday == 0:
 		viikonpaiva = "maanantai"
-	elif tukiWeekday is 1:
+	elif tukiWeekday == 1:
 		viikonpaiva = "tiistai"
-	elif tukiWeekday is 2:
+	elif tukiWeekday == 2:
 		viikonpaiva = "keskiviikko"
-	elif tukiWeekday is 3:
+	elif tukiWeekday == 3:
 		viikonpaiva = "torstai"
-	elif tukiWeekday is 4:
+	elif tukiWeekday == 4:
 		viikonpaiva = "perjantai"
 
 	# construct a nice message
 	if timeToTukiDate.days > 0 and timeToTukiDate.days < 32:
 		header = "📅 *Seuraava tukipäivä on {:s} {:d}.{:d}.*\n".format(viikonpaiva,tukiDate2.day,tukiDate2.month)
-		if timeToTukiDate.days is not 1:
+		if timeToTukiDate.days != 1:
 			mid = "Seuraaviin tukiin aikaa *{:s}* päivää.".format(str(timeToTukiDate.days))
 		else:
 			mid = "Seuraaviin tukiin aikaa *{:s}* päivä.".format(str(timeToTukiDate.days))
-		replymsg = header + mid
+		reply_msg = header + mid
 	
 	# if tukiDate's month is September, it's currently summertime; reply accordingly
-	elif tukiDate2.month is 9 and today.month is not 9:
+	elif tukiDate2.month == 9 and today.month != 9:
 		time = datetime.datetime.today()
 		if time.hour > 4 and time.hour < 18:
 			header = "👷‍♂️ *Mikset ole töissä?*\n"
@@ -1626,9 +1893,9 @@ def tuet(msg):
 			header = "😴 *Suihkuun ja nukkumaan, huomenna töihin*\n"
 		mid = "Seuraava tukipäivä on kesän jälkeen, {:s}na {:d}.{:d}.\n".format(viikonpaiva,tukiDate2.day,tukiDate2.month)
 		low = "Seuraaviin tukiin aikaa *{:s}* päivää.".format(str(timeToTukiDate.days))
-		replymsg = header + mid + low
+		reply_msg = header + mid + low
 
-	bot.sendMessage(msg['chat']['id'], replymsg, parse_mode="Markdown")
+	bot.sendMessage(msg['chat']['id'], reply_msg, parse_mode="Markdown")
 	return
 
 
@@ -1689,7 +1956,7 @@ def saa(msg, runCount):
 			settingMap['saa']['defaultCity'] = 'Otaniemi'
 
 			with open("data/chats/" + str(chat) +  "/settings.json", 'w') as jsonData:
-				json.dump(settingMap, jsonData, indent=4, sort_keys=True)
+				json.dump(settingMap, jsonData, indent=4)
 
 		if defaultCity == 'Otaniemi':
 			cityName = 'Otaniemi'
@@ -1719,15 +1986,13 @@ def saa(msg, runCount):
 			return errormsg
 		humidity = float(datasplit[1].split(" ")[1])
 		pressure = float(datasplit[2].split(" ")[1])
-		lux = float(datasplit[3].split(" ")[1])
+		#lux = float(datasplit[3].split(" ")[1])
 
 		timestr = time.localtime(time.time())
 		if timestr[4] < 10:
 		    timemin = str(0) + str(timestr[4])
 		else:
 		    timemin = str(timestr[4])
-
-		timestr1 = "kello {:d}.{:s}".format(timestr[3],timemin)
 
 	# api key to send
 	apiAppend = '&APPID=' + WEATHERKEY
@@ -1756,15 +2021,16 @@ def saa(msg, runCount):
 	if today.hour > 4 and today.hour < 22 and cityName == 'Otaniemi':
 		owmURLs.append(UVIndexURL)
 
-
 	# go through the two or three urls using multiple threads for a slight speedup (network sluggishness etc.)
-	threads = 4
+	threads = os.cpu_count()
 	pool = Pool(threads)
 
 	try:
 		pool.map(weatherAPILoad, owmURLs)
+		pool.terminate()
 	except multiprocessing.pool.MaybeEncodingError:
-		if runCount is 0:
+		pool.terminate()
+		if runCount == 0:
 			translation = translate(cityName,'en','auto').replace('to ', '')
 
 			# modify message text content
@@ -1791,10 +2057,10 @@ def saa(msg, runCount):
 			UVstr = ''
 
 		elif int(UVIndexMagnitude) in range(3,6):
-			UVstr = '\n\n☀️ Kohtalainen UV-indeksi ({:.1f})\nMuista aurinkolasit! 😎'.format(UVIndexMagnitude)
+			UVstr = '\n\n☀️ *Kohtalainen UV-indeksi* ({:.1f})\nMuista aurinkolasit! 😎'.format(UVIndexMagnitude)
 
 		elif int(UVIndexMagnitude) in range(6,8):
-			UVstr = '\n\n☀️ Voimakas UV-indeksi ({:.1f})\nMuista aurinkovoide ja aurinkolasit! 🍳'.format(UVIndexMagnitude)
+			UVstr = '\n\n☀️ *Voimakas UV-indeksi* ({:.1f})\nMuista aurinkovoide ja aurinkolasit! 🍳'.format(UVIndexMagnitude)
 
 		elif int(UVIndexMagnitude) in range(8,11):
 			UVstr = '\n\n⚠️ *Hyvin voimakas UV-indeksi ({:.1f})*\nMuista aurinkovoide, suojaamaton iho palaa nopeasti!'.format(UVIndexMagnitude)
@@ -1827,32 +2093,32 @@ def saa(msg, runCount):
 			rain = True
 			try:
 				precip = weatherJSON['list'][1]['rain']['3h']
-				rainStr = "\n\n☔️ Sateita seuraavan kolmen tunnin aikana."
-				precipStr = "\nEnnustettu sademäärä noin {:.2f} mm.".format(precip)
+				rainStr = "\n\n☔️ *Sateita seuraavan kolmen tunnin aikana*"
+				precipStr = "\nEnnustettu sademäärä noin {:.2f} mm".format(precip)
 			except KeyError:
 				precip = weatherJSON['list'][0]['rain']['3h']
-				rainStr = "\n\n☔️ Sateita seuraavan tunnin aikana."
-				precipStr = "\nEnnustettu sademäärä noin {:.2f} mm.".format(precip)
+				rainStr = "\n\n☔️ *Sateita seuraavan tunnin aikana*"
+				precipStr = "\nEnnustettu sademäärä noin {:.2f} mm".format(precip)
 
 		elif weatherCond == 'Snow' or weatherCondNext == 'Snow':
 			rain = True
 			try:
 				precip = weatherJSON['list'][1]['snow']['3h']
-				rainStr = "\n\n❄️ Lumisateita seuraavan kolmen tunnin aikana."
-				precipStr = "\nEnnustettu sademäärä noin {:.2f} mm.".format(precip)
+				rainStr = "\n\n❄️ *Lumisateita seuraavan kolmen tunnin aikana*"
+				precipStr = "\nEnnustettu sademäärä noin {:.2f} mm".format(precip)
 			except KeyError:
 				precip = weatherJSON['list'][0]['snow']['3h']
-				rainStr = "\n\n❄️ Lumisateita seuraavan tunnin aikana."
-				precipStr = "\nEnnustettu sademäärä noin {:.2f} mm.".format(precip)
+				rainStr = "\n\n❄️ *Lumisateita seuraavan tunnin aikana*"
+				precipStr = "\nEnnustettu sademäärä noin {:.2f} mm".format(precip)
 
 	else:
-		if ForecastValidityLeft is 1:
+		if ForecastValidityLeft == 1:
 			tunnit = ''
 
-		elif ForecastValidityLeft is 2:
+		elif ForecastValidityLeft == 2:
 			tunnit = 'kahden '
 
-		elif ForecastValidityLeft is 3:
+		elif ForecastValidityLeft == 3:
 			tunnit = 'kolmen '
 
 		# if there's rain within the next 3 hours, check if it continues.
@@ -1872,24 +2138,24 @@ def saa(msg, runCount):
 			else:
 				break
 
-		if rainCount is not 0 or snowCount is not 0:
+		if rainCount != 0 or snowCount != 0:
 			rainLength = ForecastValidityLeft + rainCount * 3 + snowCount * 3
 			if rainLength < 11:
-				if rainLength is 3:
+				if rainLength == 3:
 					tunnit = 'kolmen '
-				elif rainLength is 4:
+				elif rainLength == 4:
 					tunnit = 'neljän '
-				elif rainLength is 5:
+				elif rainLength == 5:
 					tunnit = 'viiden '
-				elif rainLength is 6:
+				elif rainLength == 6:
 					tunnit = 'kuuden '
-				elif rainLength is 7:
+				elif rainLength == 7:
 					tunnit = 'seitsemän '
-				elif rainLength is 8:
+				elif rainLength == 8:
 					tunnit = 'kahdeksan '
-				elif rainLength is 9:
+				elif rainLength == 9:
 					tunnit = 'yhdeksän '
-				elif rainLength is 10:
+				elif rainLength == 10:
 					tunnit = 'kymmenen '
 			else:
 				tunnit = str(rainLength) + ' '
@@ -1898,47 +2164,47 @@ def saa(msg, runCount):
 			rain = True
 			precip = weatherJSON['list'][0]['rain']['3h']
 			
-			if rainCount is not 0 and snowCount is 0:
-				rainStr = "\n\n☔️ Sateita seuraavan {:s}tunnin aikana.".format(tunnit)
+			if rainCount != 0 and snowCount == 0:
+				rainStr = "\n\n☔️ *Sateita seuraavan {:s}tunnin aikana*".format(tunnit)
 				precip += futurePrecip
 
-			elif snowCount is not 0 and rainCount is 0:
-				rainStr = "\n\n☔️ Vesi- ja lumisateita seuraavan {:s}tunnin aikana.".format(tunnit)
+			elif snowCount != 0 and rainCount == 0:
+				rainStr = "\n\n☔️ *Vesi- ja lumisateita seuraavan {:s}tunnin aikana*".format(tunnit)
 				precip += futurePrecip
 
-			elif snowCount is not 0 and rainCount is not 0:
-				rainStr = "\n\n☔️ Vesi- ja lumisateita seuraavan {:s}tunnin aikana.".format(tunnit)
+			elif snowCount != 0 and rainCount != 0:
+				rainStr = "\n\n☔️ *Vesi- ja lumisateita seuraavan {:s}tunnin aikana*".format(tunnit)
 				precip += futurePrecip
 
 			else:
-				rainStr = "\n\n☔️ Sateita seuraavan {:s}tunnin aikana.".format(tunnit)
+				rainStr = "\n\n☔️ *Sateita seuraavan {:s}tunnin aikana*".format(tunnit)
 			
-			precipStr = "\nEnnustettu sademäärä noin {:.2f} mm.".format(precip)
+			precipStr = "\nEnnustettu sademäärä noin {:.2f} mm".format(precip)
 
 		elif weatherCond == 'Snow':
 			rain = True
 			precip = weatherJSON['list'][0]['snow']['3h']
 
 			# snow in the future
-			if rainCount is not 0 and snowCount is 0:
-				rainStr = "\n\n☔️ Vesi- ja lumisateita seuraavan {:s}tunnin aikana.".format(tunnit)
+			if rainCount != 0 and snowCount == 0:
+				rainStr = "\n\n☔️ *Vesi- ja lumisateita seuraavan {:s}tunnin aikana*".format(tunnit)
 				precip += futurePrecip
 
 			# snow in the future
-			elif snowCount is not 0 and rainCount is 0:
-				rainStr = "\n\n❄️ Lumisateita seuraavan {:s}tunnin aikana.".format(tunnit)
+			elif snowCount != 0 and rainCount == 0:
+				rainStr = "\n\n❄️ *Lumisateita seuraavan {:s}tunnin aikana*".format(tunnit)
 				precip += futurePrecip
 
 			# both rain and snow in the future
-			elif snowCount is not 0 and rainCount is not 0:
-				rainStr = "\n\n☔️ Vesi- ja lumisateita seuraavan {:s}tunnin aikana.".format(tunnit)
+			elif snowCount != 0 and rainCount != 0:
+				rainStr = "\n\n☔️ *Vesi- ja lumisateita seuraavan {:s}tunnin aikana*".format(tunnit)
 				precip += futurePrecip
 
 			# nothing in the near-future
 			else:		
-				rainStr = "\n\n❄️ Lumisateita seuraavan {:s}tunnin aikana.".format(tunnit)
+				rainStr = "\n\n❄️ *Lumisateita seuraavan {:s}tunnin aikana*".format(tunnit)
 			
-			precipStr = "\nEnnustettu sademäärä noin {:.2f} mm.".format(precip)
+			precipStr = "\nEnnustettu sademäärä noin {:.2f} mm".format(precip)
 
 	if rain is False:
 		rainStr = ''
@@ -1997,7 +2263,7 @@ def saa(msg, runCount):
 		if localTimeMins < 10:
 			localTimeMins = '0' + str(localTimeMins)
 
-		timeStr = f'\n\n🕓 Paikallinen kellonaika {int(localTimeHours)}.{localTimeMins} (UTC{timeZoneStr})'
+		timeStr = f'\n\n🕓 *Paikallinen kellonaika* {int(localTimeHours)}.{localTimeMins} (UTC{timeZoneStr})'
 
 	sunriseTimestamp = weatherJSON['sys']['sunrise']
 	sunsetTimestamp = weatherJSON['sys']['sunset']
@@ -2027,51 +2293,59 @@ def saa(msg, runCount):
 		nextSun = 'sunrise'
 
 	# handle conditions with no wind at all
-	windDesc = ''
+	windDesc = 'tuuli'
 	try:
 		windDir = weatherJSON['wind']['deg']
 	except KeyError:
 		windDir = -1
-		windDesc = ''
+		windDesc = 'tuuli'
 
 	# wind directions
 	if windDir in range(0,int(22.5)):
-		windDesc = 'pohjois'
+		windDesc = 'pohjoistuuli'
 	elif windDir in range(int(22.5),int(67.5)):
-		windDesc = 'koillis'
+		windDesc = 'koillistuuli'
 	elif windDir in range(int(67.5),int(112.5)):
-		windDesc = 'itä'
+		windDesc = 'itätuuli'
 	elif windDir in range(int(112.5),int(157.5)):
-		windDesc = 'kaakkois'
+		windDesc = 'kaakkoistuuli'
 	elif windDir in range(int(157.5),int(202.5)):
-		windDesc = 'etelä'
+		windDesc = 'etelätuuli'
 	elif windDir in range(int(202.5),int(247.5)):
-		windDesc = 'lounais'
+		windDesc = 'lounaistuuli'
 	elif windDir in range(int(247.5),int(292.5)):
-		windDesc = 'länsi'
+		windDesc = 'länsituuli'
 	elif windDir in range(int(292.5),int(337.5)):
-		windDesc = 'luoteis'
+		windDesc = 'luoteistuuli'
 	elif windDir in range(int(337.5),int(360)):
-		windDesc = 'pohjois'
+		windDesc = 'pohjoistuuli'
 
 	# wind speeds
 	windInt = int(wind)
 	if windInt in range(0,4):
 		windSpeedDesc = 'Heikko'
+		#windSpeedDesc = 'heikosti'
 	elif windInt in range(4,8):
 		windSpeedDesc = 'Kohtalainen'
+		#windSpeedDesc = 'kohtalaisesti'
 	elif windInt in range(8,14):
 		windSpeedDesc = 'Navakka'
+		#windSpeedDesc = 'navakasti'
 	elif windInt in range(14,21):
 		windSpeedDesc = 'Kova'
+		#windSpeedDesc = 'kovaa'
 	elif windInt in range(21,25):
 		windSpeedDesc = '⚠️ Myrskyinen'
+		#windSpeedDesc = 'myrskyisesti'
 	elif windInt in range(25,29):
-		windSpeedDesc = '⚠️ *Hyvin myrskyinen*'
+		windSpeedDesc = '⚠️ Hyvin myrskyinen'
+		#windSpeedDesc = 'hyvin myrskyisesti'
 	elif windInt in range(29,32):
-		windSpeedDesc = '⚠️ *Äärimmäisen myrskyinen*'
+		windSpeedDesc = '⚠️ Äärimmäisen myrskyinen'
+		#windSpeedDesc = 'äärimmäisen myrskyisesti'
 	elif windInt >= 32:
-		windSpeedDesc = '⚠️ *Hirmumyrskyinen*'
+		windSpeedDesc = '⚠️ Hirmumyrskyinen'
+		#windSpeedDesc = 'hirmumyrskyn tavoin'
 
 	# weather descriptions
 	weatherDescriptions = {}
@@ -2153,7 +2427,7 @@ def saa(msg, runCount):
 	# cloudy
 	weatherIcons['801'] = {}
 	weatherIcons['801']['day'] = '🌤'
-	weatherIcons['801']['night'] = '🌒'
+	weatherIcons['801']['night'] = '☁️'
 
 	weatherIcons['802'] = {}
 	weatherIcons['802']['day'] = '⛅️'
@@ -2172,13 +2446,27 @@ def saa(msg, runCount):
 		weatherIcon = weatherIcons[iconID[0]]
 
 	elif iconID[0] == '8':
-		if datetime.datetime.today().hour in range(7,22):
-			weatherIcon = weatherIcons[iconID]['day']
-		else:
+		# next up is sunrise and it's past 00:00
+		if nextSun == 'sunrise' and timeToSunrise is not -1:
 			weatherIcon = weatherIcons[iconID]['night']
+
+		# sun has not set yet
+		elif nextSun == 'sunset':
+			weatherIcon = weatherIcons[iconID]['day']
+
+		# the sun has set
+		elif timeToSunset == -1:
+			weatherIcon = weatherIcons[iconID]['night']
+
+		#if datetime.datetime.today().hour in range(7,22):
+		#	weatherIcon = weatherIcons[iconID]['day']
+		#else:
+		#	weatherIcon = weatherIcons[iconID]['night']
 
 	else:
 		weatherIcon = '❔'
+
+	month = datetime.datetime.now().month
 
 	if temp <= -20:
 		feelslike = 'arktinen'
@@ -2189,50 +2477,101 @@ def saa(msg, runCount):
 	elif temp >= -5 and temp < 5:
 		feelslike = 'viileä'
 	elif temp >= 5 and temp < 12:
-		feelslike = 'keväinen'
+		if month in range(9,12+1):
+			feelslike = 'syksyinen'
+		else:
+			feelslike = 'keväinen'
 	elif temp >= 12 and temp < 15:
 		feelslike = 'wappuinen'
 	elif temp >= 15 and temp < 22:
-		feelslike = 'kesäisen lämmin'
+		if month in range(9,12+1):
+			feelslike = 'lämmin'
+		else:
+			feelslike = 'kesäinen'
 	elif temp >= 21 and temp <= 25:
-		feelslike = 'kesäinen'
+		feelslike = 'kesäisen lämmin'
 	elif temp > 25 and temp < 28:
 		feelslike = 'helteinen'
 	elif temp >= 28:
 		feelslike = 'paahtava'
 
+	# calculate dew point (ew1, ei2) [www.public.iastate.edu/~bkh/teaching/505/arden_buck_sat.pdf]
+	# ew = e'w/f2
+	# ei = e'i/fi
+	if temp >= 0 and temp <= 50: # if temp greater than 0, use ew2 (dew point)
+		a_dew = 6.1121
+		b_dew = 17.368
+		c_dew = 238.88
+	elif temp < 0 and temp >= -50: # if temp less than 0, use ei2 (frost point)
+		a_dew = 6.1115
+		b_dew = 22.452
+		c_dew = 272.55
+
+	P_sat = a_dew * math.exp(b_dew*temp/(temp+c_dew))
+	gamma_m = math.log((humidity/100)*math.exp(b_dew*temp/(temp+c_dew)))
+	T_dew = (c_dew * gamma_m) / (b_dew - gamma_m)
+
+	if T_dew >= 0:
+		dew_str = '*Kastepiste*'
+	else:
+		dew_str = '*Kuurapiste*'
+
+	if temp <= T_dew and dew_str == '*Kuurapiste*' and today.hour > 4 and today.hour < 11:
+		dew_str_extra = '❄️ Joudut skrapaamaan ikkunat\n\n'
+	else:
+		dew_str_extra = ''
+
+	# Calculate WCI
+	WCI = 13.12 + 0.6215*temp - 11.37*wind**0.16 + 0.3965*temp*wind**0.16
+
 	# weatherIcon for sunset and sunrise, if it's clear
 	sunRepstr = ''
-	if iconID[0] == '8':
-		if nextSun == 'sunrise' and timeToSunrise is not -1:
-			#if timeToSunrise.seconds <= 1800*(3/2):
-				#weatherIcon = '🌄'
-			if timeToSunrise.seconds <= 3600*2:
-				if timeToSunrise.seconds <= 3600:
-					timeString = int(timeToSunrise.seconds/60)
-					sunRepstr = f'\n\n🌄 Auringonnousuun {timeString} minuuttia.'
-				else:
-					minTime = int((timeToSunrise.seconds - 3600)/60)
-					timeString = f'tunti ja {minTime} minuuttia'
-					sunRepstr = f'\n\n🌄 Auringonnousuun {timeString}.'
+	# Time to sunrise; it's the same day as the sun is going to rise
+	if nextSun == 'sunrise' and timeToSunrise is not -1:
+		#if timeToSunrise.seconds <= 1800*(3/2):
+			#weatherIcon = '🌄'
+		if timeToSunrise.seconds <= 3600*2:
+			if timeToSunrise.seconds <= 3600:
+				timeString = int(timeToSunrise.seconds/60)
+				sunRepstr = f'\n\n🌄 *Auringonnousuun* {timeString} minuuttia'
+			else:
+				minTime = int((timeToSunrise.seconds - 3600)/60)
+				timeString = f'tunti ja {minTime} minuuttia'
+				sunRepstr = f'\n\n🌄 *Auringonnousuun* {timeString}'
 
-		elif nextSun == 'sunset':
-			#if timeToSunset.seconds <= 1800*(3/2):
-			#	weatherIcon = '🌅'
-			if timeToSunset.seconds <= 3600:
-				timeString = int(timeToSunset.seconds/60)
-				sunRepstr = f'\n\n🌅 Auringonlaskuun {timeString} minuuttia.'
+	# sunset, the day it's setting
+	elif nextSun == 'sunset':
+		#if timeToSunset.seconds <= 1800*(3/2):
+		#	weatherIcon = '🌅'
+		if timeToSunset.seconds <= 3600:
+			timeString = int(timeToSunset.seconds/60)
+			sunRepstr = f'\n\n🌅 *Auringonlaskuun* {timeString} minuuttia'
+		elif timeToSunset.seconds < 7200:
+			timeString = int((timeToSunset.seconds - 3600)/60)
+			sunRepstr = f'\n\n🌅 *Auringonlaskuun* tunti ja {timeString} minuuttia'
 
-			elif abs(today - sunrise).seconds <= 3600:
-				timeDelta = abs(today - sunrise)
-				timeString = int(timeDelta.seconds/60)
-				sunRepstr = f'\n\n🌄 Aurinko nousi {timeString} minuuttia sitten.'
+		# account for the case where the sun rises the same day it sets (northern summers)
+		elif abs(today - sunrise).seconds <= 3600:
+			timeDelta = abs(today - sunrise)
+			timeString = int(timeDelta.seconds/60)
+			sunRepstr = f'\n\n🌄 *Aurinko nousi* {timeString} minuuttia sitten'
+		elif abs(today - sunrise).seconds < 7200:
+			timeDelta = abs(today - sunrise)
+			seconds = timeDelta.seconds - 3600
+			timeString = int(seconds/60)
+			sunRepstr = f'\n\n🌄 *Aurinko nousi* tunti ja {timeString} minuuttia sitten'
 
-		elif timeToSunset == -1:
-			if abs(today - sunset).seconds <= 3600:
-				timeDelta = abs(today - sunset)
-				timeString = int(timeDelta.seconds/60)
-				sunRepstr = f'\n\n🌅 Aurinko laski {timeString} minuuttia sitten.'
+	# the sun has set, but it's still the day it set
+	elif timeToSunset == -1:
+		if abs(today - sunset).seconds <= 3600:
+			timeDelta = abs(today - sunset)
+			timeString = int(timeDelta.seconds/60)
+			sunRepstr = f'\n\n🌅 *Aurinko laski* {timeString} minuuttia sitten'
+		elif abs(today - sunset).seconds < 7200:
+			timeDelta = abs(today - sunset)
+			seconds = timeDelta.seconds - 3600
+			timeString = int(seconds/60)
+			sunRepstr = f'\n\n🌅 *Aurinko laski* tunti ja {timeString} minuuttia sitten'
 
 
 	# construct the message
@@ -2241,15 +2580,22 @@ def saa(msg, runCount):
 	else:
 		header = f'{weatherIcon} *{cityName} – {finnWeatherDesc}*\n'
 
-	tempStr = "Lämpötila on {:s} {:+.1f} °C.".format(feelslike,temp)
+	tempStr = "*Lämpötila* on {:s} {:+.1f} °C\n".format(feelslike,temp)
+	#mid = "*{:s}* puhaltaa {:s} {:.1f} m/s\n".format(windDesc,windSpeedDesc,wind)
+	mid = "*{:s}* {:.1f} m/s {:s}\n".format(windSpeedDesc,wind,windDesc)
 
-	mid = "\n{:s} {:.1f} m/s {:s}tuuli.\n".format(windSpeedDesc,wind,windDesc)
-	hp = "Ilmanpaine on {:.1f} hPa.\nIlmankosteus on {:.1f} RH%.".format(pressure,humidity)
+	if wind > 4.8/3.6 and temp <= 10 and WCI < temp:
+		Windex = '*Viimaindeksi* on noin {:+.1f} °C\n\n'.format(WCI)
+	else:
+		Windex = '\n'
+
+	dewprint = '{:s} on noin {:+.1f} °C\n'.format(dew_str,T_dew)
+	hp = "*Ilmanpaine* on {:.1f} hPa\n*Ilmankosteus* on {:.1f} RH%".format(pressure,humidity)
 	
 	if countryCode != 'FI':
-		weatherReply = header + tempStr + mid + hp + rainStr + precipStr + timeStr
+		weatherReply = header + tempStr + mid + Windex + dewprint + dew_str_extra + hp + rainStr + precipStr + timeStr
 	else:
-		weatherReply = header + tempStr + mid + hp + rainStr + precipStr
+		weatherReply = header + tempStr + mid + Windex + dewprint + dew_str_extra + hp + rainStr + precipStr
 
 	# check if we need to include the UV-index string
 	if UVstr != '' and iconID in UVconditions:
@@ -2259,6 +2605,16 @@ def saa(msg, runCount):
 		else:
 			if timeToSunrise.seconds < 3600*2:
 				weatherReply = weatherReply + UVstr
+
+	today = date.today()
+	FI_holidays = holidays.FI()
+	if today in holidays.FI():
+		holiday_str = ''
+		holidays_all, i = FI_holidays.get(today), 1
+		holiday_str = holidays_all
+
+		holiday_print = '\n\n📅 *{:s}*'.format(holiday_str)
+		weatherReply = weatherReply + holiday_print
 
 	if sunRepstr != '':
 		if countryCode != 'FI':
@@ -2279,9 +2635,9 @@ def webcam(msg):
 	except IndexError:
 		bot.sendChatAction(chat, action='typing')
 
-		replyMsg = '*📷 Käyttö: /webcam [kameran nimi]*\nKamerat: Väre (väre), Maarintie 13 (mt13)\n'
-		replyMsg = replyMsg + '_Kameroita ylläpitää Aalto-yliopisto – kuvat päivittyvät vartin välein._'
-		bot.sendMessage(chat_id=chat, text=replyMsg, parse_mode="Markdown")
+		reply_msg = '*📷 Käyttö: /webcam [kameran nimi]*\nKamerat: Väre (väre), Maarintie 13 (mt13)\n'
+		reply_msg = reply_msg + '_Kameroita ylläpitää Aalto-yliopisto – kuvat päivittyvät vartin välein._'
+		bot.sendMessage(chat_id=chat, text=reply_msg, parse_mode="Markdown")
 
 		return
 
@@ -2326,9 +2682,62 @@ def webcam(msg):
 
 	else:
 		bot.sendChatAction(chat, action='typing')
-		replyMsg = '*📷 Käyttö: /webcam [kameran nimi]*\nKamerat: Väre (väre), Maarintie 13 (mt13)\n'
-		replyMsg = replyMsg + '_Kameroita ylläpitää Aalto-yliopisto – kuvat päivittyvät vartin välein._'
-		bot.sendMessage(chat_id=chat, text=replyMsg, parse_mode="Markdown")
+		reply_msg = '*📷 Käyttö: /webcam [kameran nimi]*\nKamerat: Väre (väre), Maarintie 13 (mt13)\n'
+		reply_msg = reply_msg + '_Kameroita ylläpitää Aalto-yliopisto – kuvat päivittyvät vartin välein._'
+		bot.sendMessage(chat_id=chat, text=reply_msg, parse_mode="Markdown")
+
+
+def fingerpori(chat):
+	# allows user to request one of the 10 latest comics
+	# fingerpori(-1) would be one day ago, -2 would be 2 days ago etc.
+
+	# load page
+	base_url = 'https://www.hs.fi/fingerpori'
+	page = urlopen(base_url)
+	soup = BeautifulSoup(page, 'html.parser')
+
+	# pull div containing the comics
+	comic_frame = soup.find_all('div', class_='is-list cartoons section')
+	
+	# each comis is a list element in the div
+	comic_list = comic_frame[0].find('li', class_='list-item cartoon')
+
+	# pull image url and date
+	img = comic_list.find('img', class_='lazyload lazyloadable-image')
+	img_date = comic_list.find('meta', itemprop='datePublished')['content'].split('-')
+
+	img_date_string = f'[HS.fi] Fingerpori päivälle {img_date[2]}.{img_date[1]}.'
+
+	if date.today().weekday() == 5 or date.today().weekday() == 6:
+		img_date_string += '\nHuomioithan, ettei Fingerpori päivity viikonloppuisin.'
+
+	img_url = img['data-srcset'].split(' ')[0].replace('//', 'https://')
+
+	if not os.path.isdir(os.path.join('data', 'fp_cache')):
+		os.mkdir(os.path.join('data', 'fp_cache'))
+
+	# load and cache image
+	if not os.path.isfile(os.path.join('data', 'fp_cache', f'{img_date[2]}-{img_date[1]}-{img_date[0]}.jpg')):
+		try:
+			urllib.request.urlretrieve(
+				img_url,
+				os.path.join('data', 'fp_cache', f'{img_date[2]}-{img_date[1]}-{img_date[0]}.jpg')
+				)
+		except:
+			reply_msg = '⚠️ *Virhe ladatessa kuvaa* – kokeile uudestaan myöhemmin.'
+			bot.sendMessage(
+				chat_id=chat,
+				text=reply_msg,
+				parse_mode="Markdown"
+				)
+
+			return
+
+	# send image
+	with open(os.path.join('data', 'fp_cache', f'{img_date[2]}-{img_date[1]}-{img_date[0]}.jpg'), 'rb') as image:
+		bot.sendPhoto(chat_id=chat, photo=image, caption=img_date_string)
+
+	return
 
 
 def replace(msg):
@@ -2344,8 +2753,8 @@ def replace(msg):
 		try:
 			old_text = msg['reply_to_message']['text']
 		except KeyError:
-			replyMsg = '*🔀 Käyttö: /s [korvattava teksti] > [uusi teksti]*\nKomento korvaa viestissä johon vastaat tekstin #1 tekstillä #2.'
-			bot.sendMessage(msg['chat']['id'], text=replyMsg, parse_mode='Markdown')
+			reply_msg = '*🔀 Käyttö: /s [korvattava teksti] > [uusi teksti]*\nKomento korvaa viestissä johon vastaat tekstin #1 tekstillä #2.'
+			bot.sendMessage(msg['chat']['id'], text=reply_msg, parse_mode='Markdown')
 			return
 
 		# check if substring exists
@@ -2362,8 +2771,8 @@ def replace(msg):
 				return
 
 	except IndexError:
-		replyMsg = '*🔀 Käyttö: /s [korvattava teksti] > [uusi teksti]*\nKomento korvaa vastatussa viestissä tekstin #1 tekstillä #2.'
-		bot.sendMessage(msg['chat']['id'], text=replyMsg, parse_mode='Markdown')
+		reply_msg = '*🔀 Käyttö: /s [korvattava teksti] > [uusi teksti]*\nKomento korvaa vastatussa viestissä tekstin #1 tekstillä #2.'
+		bot.sendMessage(msg['chat']['id'], text=reply_msg, parse_mode='Markdown')
 		return
 
 
@@ -2427,7 +2836,7 @@ def alkoCalc(pageURL):
             except ZeroDivisionError:
                 alcoFactor = 'Ei alkoholia'
 
-            if alcoFactor is not 'Ei alkoholia':
+            if alcoFactor != 'Ei alkoholia':
                 productStore[storeName][productID] = {}
                 productStore[storeName][productID]['name'] = name
                 productStore[storeName][productID]['category'] = category
@@ -2446,7 +2855,7 @@ def alkoCalc(pageURL):
 
     with io.open('productCatalog.json', 'w', encoding='utf8') as catalog:
         newProductStore = {**oldProductStore, **productStore}
-        json.dump(newProductStore, catalog, indent=4, sort_keys=True)
+        json.dump(newProductStore, catalog, indent=4)
 
 
     return
@@ -2545,11 +2954,12 @@ def alko():
         urls.append(url)
 
     # generate pool
-    threads = 4 # 2 physical cores, 4 virtual cores -> 4 threads @ 100% util.
+    threads = os.cpu_count()
     pool = Pool(threads)
 
     # start threads
     pool.map(alkoCalc, urls)
+    pool.terminate()
 
     tEnd = datetime.datetime.today()
     tElapsed = abs(tEnd - tStart)
@@ -2560,7 +2970,7 @@ def alko():
 
 def info(msg):
 	content_type, chat_type, chat = telepot.glance(msg, flavor='chat')
-	chatDir = f'data/chats/{chat}'
+	chatDir = os.path.join('data/chats', str(chat))
 
 	# read stats db
 	statsConn = sqlite3.connect('data/stats.db')
@@ -2571,7 +2981,7 @@ def info(msg):
 
 		# parse returned global data
 		queryReturn = statsCursor.fetchall()
-		if len(queryReturn) is not 0:
+		if len(queryReturn) != 0:
 			globalMessages = 0
 			globalCommands = 0
 			for row in queryReturn:
@@ -2593,7 +3003,7 @@ def info(msg):
 		queryReturn = statsCursor.fetchall()
 		statsConn.close()
 
-		if len(queryReturn) is not 0:
+		if len(queryReturn) != 0:
 			messages = 0
 			commands = 0
 			for row in queryReturn:
@@ -2619,6 +3029,10 @@ def info(msg):
 	else:
 		upmins = str(upmins)
 
+	# get system load average
+	load_avgs = os.getloadavg() # [x, y, z]
+	load_avg_str = 'Load {:.2f} {:.2f} {:.2f}'.format(load_avgs[0], load_avgs[1], load_avgs[2])
+
 	# get chainStore.db file size
 	try:
 		dbSize = float(os.path.getsize(os.path.join(chatDir,'chainStore.db')) / 1000000)
@@ -2634,24 +3048,15 @@ def info(msg):
 	globalStatsHeader = '*Yleiset tilastot*\n'
 	globalStats1 = 'Viestejä käsitelty: {:d}\n'.format(globalMessages)
 	globalStats2 = 'Komentoja käsitelty: {:d}\n'.format(globalCommands)
-
-	today = datetime.datetime.now()
-	hour = today.hour
-	mins = today.minute
-
-	if mins < 10:
-		mins = str(0) + str(mins)
-	else:
-		mins = str(mins)
 	
 	if updays > 0:
-		infomsg4 = "{:d}:{:s} up {:d} days, {:d}:{:s}\n".format(hour,mins,updays,uphours,upmins)
+		infomsg4 = "Uptime {:d} days, {:d} h {:s} min\n".format(updays,uphours,upmins)
 	else:
-		infomsg4 = "{:d}:{:s}  up {:d}:{:s}\n".format(hour,mins,uphours,upmins)
+		infomsg4 = "Uptime {:d} hours {:s} min\n".format(uphours,upmins)
 
 	upstr = '\n*Palvelimen tiedot*\n'
 
-	return localStatsHeader + localStats1 + localStats2 + localdbsize + globalStatsHeader + globalStats1 + globalStats2 + upstr + infomsg1 + infomsg4
+	return localStatsHeader + localStats1 + localStats2 + localdbsize + globalStatsHeader + globalStats1 + globalStats2 + upstr + infomsg1 + infomsg4 + load_avg_str
 
 
 def firstRun():
@@ -2695,7 +3100,7 @@ def firstRun():
 			tokenInput = str(input('Syötä OpenWeatherMap -palvelun API-avaimesi: '))
 			settingMap['owmKey'] = tokenInput
 
-			json.dump(settingMap, jsonData, indent=4, sort_keys=True)
+			json.dump(settingMap, jsonData, indent=4)
 			time.sleep(2)
 			print('\n')
 
@@ -2726,7 +3131,7 @@ def updateToken(updateTokens):
 		settingMap['owmKey'] = tokenInput
 
 	with open('data' + '/botSettings.json', 'w') as jsonData:
-		json.dump(settingMap, jsonData, indent=4, sort_keys=True)
+		json.dump(settingMap, jsonData, indent=4)
 
 	time.sleep(2)
 	print('Päivitys onnistui!\n')
@@ -2738,23 +3143,23 @@ def main():
 	global debugLog, debugMode
 
 	# current version
-	versionumero = '1.4.7'
+	versionumero = '1.6.1'
 
 	# default
 	start = False
 	debugLog = False
 	debugMode = False
 
-	# closing stuff
+	# at exit, run exitHandler()
 	atexit.register(exitHandler)
 
-	# list of args the program takes
+	# list of args the program accepts
 	startArgs = ['start', '-start']
 	debugArgs = ['log', '-log', 'debug', '-debug']
 	botTokenArgs = ['newbottoken', '-newbottoken']
 	owmTokenArgs = ['newowmtoken', '-newowmtoken']
 
-	if len(sys.argv) is 1:
+	if len(sys.argv) == 1:
 		print('Anna ainakin yksi seuraavista argumenteista:')
 		print('\tapustaja.py [-start, -newBotToken, -newOWMToken, -log]\n')
 		print('Esim: python3 apustaja.py -start')
@@ -2773,12 +3178,11 @@ def main():
 			if arg in startArgs:
 				start = True
 
+			# update tokens if instructed to
 			if arg in botTokenArgs:
 				updateTokens.append('botToken')
-			
 			if arg in owmTokenArgs:
 				updateTokens.append('owmToken')
-
 			if arg in debugArgs:
 				if arg == 'log' or arg == '-log':
 					debugLog = True
@@ -2788,12 +3192,14 @@ def main():
 					log = 'data/log.log'
 
 					# disable logging for urllib and requests because jesus fuck they make a lot of spam
-					logging.getLogger("requests").setLevel(logging.CRITICAL)
-					logging.getLogger("urllib3").setLevel(logging.CRITICAL)
-					logging.getLogger("gtts").setLevel(logging.CRITICAL)
-					logging.getLogger("pydub").setLevel(logging.CRITICAL)
+					logging.getLogger('requests').setLevel(logging.CRITICAL)
+					logging.getLogger('urllib3').setLevel(logging.CRITICAL)
+					logging.getLogger('gtts').setLevel(logging.CRITICAL)
+					logging.getLogger('pydub').setLevel(logging.CRITICAL)
 					logging.getLogger('chardet.charsetprober').setLevel(logging.CRITICAL)
+					logging.getLogger('telepot.exception.TelegramError').setLevel(logging.CRITICAL)
 
+					# start log
 					logging.basicConfig(filename=log,level=logging.DEBUG,format='%(asctime)s %(message)s', datefmt='%d/%m/%Y %H:%M:%S')
 					logging.info('🤖 Bot started')
 
@@ -2801,11 +3207,11 @@ def main():
 					debugMode = True
 
 
-		if len(updateTokens) is not 0:
+		if len(updateTokens) != 0:
 			updateToken(updateTokens)
 
 		if start is False:
-			sys.exit()
+			sys.exit('No start command given – exiting. To start bot, include -start in startup options.')
 
 	# if data folder isn't found, we haven't run before (or someone pressed the wrong button)
 	if not os.path.isdir('data'):
@@ -2823,9 +3229,8 @@ def main():
 			settingMap = json.load(jsonData)
 
 	# token for the Telegram API; get from args or as a text file
-	if len(settingMap['botToken']) is 0 or ':' not in settingMap['botToken']:
+	if len(settingMap['botToken']) == 0 or ':' not in settingMap['botToken']:
 		firstRun()
-	
 	else:
 		TOKEN = settingMap['botToken']
 		WEATHERKEY = settingMap['owmKey']
@@ -2836,16 +3241,22 @@ def main():
 	# handle ssl exceptions
 	ssl._create_default_https_context = ssl._create_unverified_context
 
-	# get the bot's specifications
+	# get the bot's username and id
 	botSpecs = bot.getMe()
 	botUsername = botSpecs['username']
 	botID = botSpecs['id']
 
 	# valid commands we monitor for
 	global validCommands, validCommandsAlt
-	validCommands = ['/markov','/s','/info','/saa','/tuet','/um','/settings','/tts','/webcam','/roll','/start','/help','/wordcloud']
-	validCommandsAlt = [] # commands with '@botUsername' appened
+	
+	validCommands = [
+	'/markov','/s','/info','/saa','/tuet','/um',
+	'/settings','/tts','/webcam','/roll','/start',
+	'/help','/wordcloud','/fingerpori', '/launch'
+	]
 
+	# generate the "alternate" commands we listen for, as in ones suffixed with the bot's username 
+	validCommandsAlt = []
 	for command in validCommands:
 		altCommand = command + '@' + botUsername
 		validCommandsAlt.append(altCommand)
@@ -2853,21 +3264,19 @@ def main():
 	MessageLoop(bot, handle).run_as_thread()
 	time.sleep(1)
 
-	if debugMode is False:
-		print('| apustaja versio {:s}'.format(versionumero))
+	if not debugMode:
+		print('| apustaja.py versio {:s}'.format(versionumero))
 		print('| älä sulje tätä ikkunaa tai aseta laitetta lepotilaan. Lopetus: ctrl + c.')
 		time.sleep(0.5)
 
-	# run main function, keep the program running.
-	if debugMode is False:
-		statusMsg = f'✅ yhteys Telegramiin muodostettu - {botUsername} toimii nyt taustalla'
+		statusMsg = f'✅ yhteys Telegramiin muodostettu - @{botUsername} toimii nyt taustalla'
 		sys.stdout.write('%s\r' % statusMsg)
 
-	if debugLog is True:
+	if debugLog:
 		logging.info('✅ Bot connected')
 
 	# fancy prints so the user can tell that we're actually doing something
-	if debugMode is False:
+	if not debugMode:
 		while True:
 			for i in range(1,4):
 				repStr = ''
@@ -2896,6 +3305,6 @@ def main():
 
 	else:
 		while True:
-			time.sleep(1)
+			time.sleep(3600)
 
 main()
