@@ -10,4 +10,3 @@ mtranslate
 numpy
 matplotlib
 wordcloud
-atexit
